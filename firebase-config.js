@@ -1,8 +1,10 @@
-// Pegá acá los datos de tu proyecto de Firebase (ver LEEME.md, paso 4).
-// Estos valores NO son secretos: la seguridad la dan las reglas de Firestore.
+// Configuración de Firebase del libro Casa Viera Ollarves.
+// Estos valores no son secretos: la seguridad la dan las reglas de Firestore.
 export const firebaseConfig = {
-  apiKey: "PEGAR_AQUI",
-  authDomain: "PEGAR_AQUI",
-  projectId: "PEGAR_AQUI",
-  appId: "PEGAR_AQUI"
+  apiKey: "AIzaSyBraydiLNp_9gTYKZI_ioYuhFgyG8srRsQ",
+  authDomain: "libro-casa-30df2.firebaseapp.com",
+  projectId: "libro-casa-30df2",
+  storageBucket: "libro-casa-30df2.firebasestorage.app",
+  messagingSenderId: "655235623241",
+  appId: "1:655235623241:web:814553742880565c245298"
 };
