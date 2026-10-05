@@ -322,7 +322,8 @@ function calc(qd){
   const egresos=autoPlat(qd).reduce((s,p)=>s+num(p.m),0)+qd.egresos.reduce((s,r)=>s+num(r.m),0);
   const antic=qd.anticipados.reduce((s,r)=>s+num(r.m),0);
   const platTotal=qd.plataformas.reduce((s,p)=>s+num(p.m),0);
-  return {mama,ingresos,egresos,balance:ingresos-egresos,antic,neto:ingresos-antic,platTotal,pct:ingresos>0?egresos/ingresos:0};
+  const egresosTotales=egresos+antic;
+  return {mama,ingresos,egresos,antic,egresosTotales,balance:ingresos-egresosTotales,platTotal,pct:ingresos>0?egresosTotales/ingresos:0};
 }
 
 /* ---------- Estado ---------- */
@@ -429,9 +430,10 @@ function refreshComputed(){
   const md=months[cur]; if(!md) return;
   const C={q1:calc(md.q1),q2:calc(md.q2)};
   const mes={ingresos:C.q1.ingresos+C.q2.ingresos, egresos:C.q1.egresos+C.q2.egresos,
-             antic:C.q1.antic+C.q2.antic, mama:C.q1.mama+C.q2.mama, platTotal:0};
-  mes.balance=mes.ingresos-mes.egresos; mes.neto=mes.ingresos-mes.antic;
-  mes.pct=mes.ingresos>0?mes.egresos/mes.ingresos:0;
+             antic:C.q1.antic+C.q2.antic, egresosTotales:C.q1.egresosTotales+C.q2.egresosTotales,
+             mama:C.q1.mama+C.q2.mama, platTotal:0};
+  mes.balance=mes.ingresos-mes.egresosTotales;
+  mes.pct=mes.ingresos>0?mes.egresosTotales/mes.ingresos:0;
   C.mes=mes;
   document.querySelectorAll('[data-k]').forEach(e=>{
     const p=e.dataset.k.split('.'); const v=C[p[0]]&&C[p[0]][p[1]]; if(v===undefined) return;
@@ -446,7 +448,7 @@ function refreshComputed(){
       if(a) a.textContent=cf.format(num(p.m));
     });
   });
-  const mx=Math.max(C.q1.ingresos,C.q1.egresos,C.q2.ingresos,C.q2.egresos,1);
+  const mx=Math.max(C.q1.ingresos,C.q1.egresosTotales,C.q2.ingresos,C.q2.egresosTotales,1);
   document.querySelectorAll('[data-bar]').forEach(b=>{
     const p=b.dataset.bar.split('.'); b.style.width=Math.max(0,Math.min(100,C[p[0]][p[1]]/mx*100))+'%';
   });
@@ -573,16 +575,16 @@ function buildQ(q){
   const v=el('div'); v.id='view-'+q; v.hidden=true;
   const k=el('div','kpis');
   k.innerHTML='<div class="kpi"><span>Ingresos</span><b data-k="'+q+'.ingresos"></b></div>'+
-    '<div class="kpi"><span>Egresos</span><b data-k="'+q+'.egresos"></b></div>'+
+    '<div class="kpi"><span>Egresos totales</span><b data-k="'+q+'.egresosTotales"></b></div>'+
     '<div class="kpi soft"><span>Balance de la quincena</span><b data-k="'+q+'.balance"></b></div>'+
-    '<div class="kpi"><span>Ingresos menos gastos anticipados</span><b data-k="'+q+'.neto"></b></div>';
+    '<div class="kpi"><span>% gastado</span><b data-k="'+q+'.pct"></b></div>';
   v.append(k);
   const g=el('div','qgrid');
   g.append(
     card(q,'ingresos','Ingresos','ingresos','Podés cambiar los montos cuando quieras; los ingresos pueden variar.'),
-    card(q,'plataformas','Plataformas y reparto','platTotal','Lo que anotes acá se refleja en <b>Egresos</b> y en el aporte de Mamá: <b data-k="{q}.mama"></b>.'),
-    card(q,'egresos','Egresos','egresos',null),
-    card(q,'anticipados','Gastos anticipados','antic',null)
+    card(q,'plataformas','Plataformas y reparto','platTotal','Lo que anotes acá se refleja en <b>Egresos fijos</b> y en el aporte de Mamá: <b data-k="{q}.mama"></b>.'),
+    card(q,'egresos','Egresos fijos','egresos',null),
+    card(q,'anticipados','Egresos variables','antic',null)
   );
   v.append(g);
   return v;
@@ -599,15 +601,16 @@ function buildResumen(){
    '<section class="card"><header><h2>Por quincena</h2></header><div class="tbl-wrap"><table class="tbl">'+
    '<thead><tr><th></th><th>1ra quincena</th><th>2da quincena</th><th>Total del mes</th></tr></thead><tbody>'+
    '<tr><td>Ingresos</td><td data-k="q1.ingresos"></td><td data-k="q2.ingresos"></td><td data-k="mes.ingresos"></td></tr>'+
-   '<tr><td>Egresos</td><td data-k="q1.egresos"></td><td data-k="q2.egresos"></td><td data-k="mes.egresos"></td></tr>'+
+   '<tr><td>Egresos fijos</td><td data-k="q1.egresos"></td><td data-k="q2.egresos"></td><td data-k="mes.egresos"></td></tr>'+
+   '<tr><td>Egresos variables</td><td data-k="q1.antic"></td><td data-k="q2.antic"></td><td data-k="mes.antic"></td></tr>'+
+   '<tr><td>Egresos totales</td><td data-k="q1.egresosTotales"></td><td data-k="q2.egresosTotales"></td><td data-k="mes.egresosTotales"></td></tr>'+
    '<tr class="strong"><td>Balance</td><td data-k="q1.balance"></td><td data-k="q2.balance"></td><td data-k="mes.balance"></td></tr>'+
    '<tr><td>% gastado</td><td data-k="q1.pct"></td><td data-k="q2.pct"></td><td data-k="mes.pct"></td></tr>'+
-   '<tr><td>Gastos anticipados</td><td data-k="q1.antic"></td><td data-k="q2.antic"></td><td data-k="mes.antic"></td></tr>'+
    '</tbody></table></div></section>'+
    '<section class="card"><header><h2>Ingresos vs. egresos</h2></header><div class="bars">'+
    ['q1','q2'].map(q=>'<div class="bar-grp"><b>'+QNAME[q]+'</b>'+
      '<div class="bar"><span>Ingresos</span><div class="track"><div class="fill i" data-bar="'+q+'.ingresos"></div></div><em data-barv="'+q+'.ingresos"></em></div>'+
-     '<div class="bar"><span>Egresos</span><div class="track"><div class="fill e" data-bar="'+q+'.egresos"></div></div><em data-barv="'+q+'.egresos"></em></div></div>').join('')+
+     '<div class="bar"><span>Egresos</span><div class="track"><div class="fill e" data-bar="'+q+'.egresosTotales"></div></div><em data-barv="'+q+'.egresosTotales"></em></div></div>').join('')+
    '</div></section></div>'+
    '<section class="card" style="margin-top:16px"><header><h2>Herramientas</h2></header>'+
    '<p class="hint">Bajá un respaldo de vez en cuando. También podés restaurarlo o pasar datos de otro libro.</p>'+
@@ -806,3 +809,4 @@ boot();
 </script>
 </body>
 </html>
+
