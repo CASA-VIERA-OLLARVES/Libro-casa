@@ -721,10 +721,9 @@ function buildResumen(){
   const del=el('button','btn danger'); del.type='button'; del.textContent='Eliminar este mes'; del.addEventListener('click',askDeleteMonth);
   tools.append(b1,b2,del);
   const te=$('#toolsExport',v);
-  const m1=el('button','btn'); m1.type='button'; m1.textContent='Imagen para Mamá (JPG)'; m1.addEventListener('click',()=>exportMama('jpg'));
-  const m2=el('button','btn'); m2.type='button'; m2.textContent='PDF para Mamá'; m2.addEventListener('click',()=>exportMama('pdf'));
+  const m1=el('button','btn'); m1.type='button'; m1.textContent='Imagen para Mamá (JPG)'; m1.addEventListener('click',exportMama);
   const m3=el('button','btn primary'); m3.type='button'; m3.textContent='Descargar plantilla completa (PDF)'; m3.addEventListener('click',exportFullPDF);
-  te.append(m1,m2,m3);
+  te.append(m1,m3);
   $('#sesion',v).textContent=me?('Sesión: '+(me.email||'')+' · ID de usuario: '+me.uid):'';
   return v;
 }
@@ -788,7 +787,7 @@ function buildMamaHTML(md){
       '<table style="width:100%;border-collapse:collapse;font-size:13px;">'+
       '<tr style="background:'+BLUE+';color:#fff;"><th style="text-align:left;padding:6px 8px;">Plataforma</th>'+
       '<th style="text-align:right;padding:6px 8px;">Monto</th><th style="text-align:center;padding:6px 8px;">Entre</th>'+
-      '<th style="text-align:right;padding:6px 8px;">Le toca a Mamá</th></tr>';
+      '<th style="text-align:right;padding:6px 8px;">C/U</th></tr>';
     filas.forEach((p,i)=>{
       const cu=(p.m!=null)?p.m/p.d:0; sub+=cu;
       body+='<tr style="background:'+(i%2?'#f2f5fb':'#fff')+';"><td style="padding:6px 8px;">'+(p.n||'—')+'</td>'+
@@ -797,10 +796,10 @@ function buildMamaHTML(md){
         '<td style="text-align:right;padding:6px 8px;font-weight:600;">'+cf.format(cu)+'</td></tr>';
     });
     granTotal+=sub;
-    body+='</table><p style="text-align:right;margin:8px 4px 0;font-weight:700;">Total '+QNAME[q]+': '+cf.format(sub)+'</p>';
+    body+='</table><p style="text-align:right;margin:8px 4px 0;font-weight:700;">Total C/U '+QNAME[q]+': '+cf.format(sub)+'</p>';
   });
   body+='<div style="margin-top:20px;padding:14px 16px;background:'+GOLD+';border-radius:10px;">'+
-    '<p style="margin:0;font-size:13px;color:#5c4500;">Total aporte de Mamá en '+monthLabel(cur)+'</p>'+
+    '<p style="margin:0;font-size:13px;color:#5c4500;">Total C/U en '+monthLabel(cur)+'</p>'+
     '<p style="margin:2px 0 0;font-size:26px;font-weight:800;color:#3a2c00;">'+cf.format(granTotal)+'</p></div></div>';
   return body;
 }
@@ -828,9 +827,9 @@ async function captureAndDeliver(innerHTML,width,filenameBase,format){
   }catch(e){ toast('No se pudo generar el archivo'); }
   finally{ wrap.remove(); }
 }
-function exportMama(format){
+function exportMama(){
   const md=months[cur]; if(!md) return;
-  captureAndDeliver(buildMamaHTML(md),680,'resumen-mama-'+cur,format);
+  captureAndDeliver(buildMamaHTML(md),680,'resumen-mama-'+cur,'jpg');
 }
 async function exportFullPDF(){
   if(typeof html2canvas==='undefined' || !(window.jspdf&&window.jspdf.jsPDF)){
@@ -1001,4 +1000,3 @@ boot();
 </script>
 </body>
 </html>
-
