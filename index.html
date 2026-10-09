@@ -114,20 +114,32 @@ main{max-width:1240px; margin:0 auto; padding:16px 16px 48px}
 .row{padding:2px 4px; border-bottom:1px solid var(--line)}
 .row:last-child{border-bottom:0}
 .r2{grid-template-columns:minmax(0,1fr) 128px 26px}
-.r3{grid-template-columns:minmax(0,1fr) 152px 110px 26px}
+.r3{grid-template-columns:minmax(0,1fr) 146px 100px 34px 26px}
 .r5{grid-template-columns:minmax(0,1fr) 104px 54px 92px 40px 26px}
 .head.r5 span:nth-child(3),.head.r5 span:nth-child(5){text-align:center}
 .head.r3 span:nth-child(2){text-align:left}
+.head.r3 span:nth-child(4){text-align:center; font-size:10.5px}
 
 input[type="text"]{width:100%; min-width:0; border:1px solid transparent; background:transparent; color:inherit; font:inherit; padding:7px 8px; border-radius:8px}
 input[type="text"]:hover{background:var(--field); border-color:var(--line)}
 input[type="text"]:focus{outline:2px solid var(--accent); outline-offset:-1px; background:var(--field)}
 input.num{text-align:right; font-variant-numeric:tabular-nums}
 input.mid{text-align:center}
-.r3 select{width:100%; min-width:0; border:1px solid var(--line); background:var(--field); color:inherit; font:inherit; font-size:12.5px; padding:6px 6px; border-radius:8px}
-.r3 select:focus{outline:2px solid var(--accent); outline-offset:-1px}
+.r3 select,.rpick select{width:100%; min-width:0; border:1px solid var(--line); background:var(--field); color:inherit; font:inherit; font-size:12.5px; padding:6px 6px; border-radius:8px}
+.r3 select:focus,.rpick select:focus{outline:2px solid var(--accent); outline-offset:-1px}
+.rpick{grid-template-columns:176px minmax(0,1fr) 104px 26px}
 .card[data-sec="fondo"] .head{background:var(--gold); color:var(--gold-ink)}
 .card[data-sec="fondo"] > header h2{color:var(--gold-ink)}
+.card[data-sec="retiro"] .head{background:var(--ve-blue)}
+.card[data-sec="retiro"] > header h2{color:var(--ve-blue)}
+.pay{
+  width:28px; height:28px; border-radius:50%; padding:0; line-height:1; font-size:14px; font-weight:800;
+  border:2px solid var(--neg); color:var(--neg); background:transparent; display:flex; align-items:center; justify-content:center;
+  margin:0 auto;
+}
+.pay:hover{opacity:.85}
+.pay.paid{border-color:var(--pos); color:#fff; background:var(--pos)}
+.c-p{display:flex; align-items:center; justify-content:center}
 .pie-wrap{display:flex; gap:20px; align-items:center; flex-wrap:wrap; margin-top:8px}
 .pie-svg{width:180px; height:180px; flex:0 0 auto}
 .pie-svg svg{width:100%; height:100%; display:block}
@@ -206,11 +218,18 @@ table.tbl{width:100%; border-collapse:collapse; margin-top:8px}
   .bar{grid-template-columns:64px 1fr 88px}
   .head.r3{display:none}
   .r3{
-    grid-template-columns:minmax(0,1fr) 100px 24px;
-    grid-template-areas:"n n x" "c m x";
+    grid-template-columns:minmax(0,1fr) 82px 36px 24px;
+    grid-template-areas:"n n n x" "c m p x";
     padding:6px 4px; row-gap:4px;
   }
-  .r3 .c-n{grid-area:n} .r3 .c-c{grid-area:c} .r3 .c-m{grid-area:m} .r3 .c-x{grid-area:x}
+  .r3 .c-n{grid-area:n} .r3 .c-c{grid-area:c} .r3 .c-m{grid-area:m} .r3 .c-p{grid-area:p} .r3 .c-x{grid-area:x}
+  .head.rpick{display:none}
+  .rpick{
+    grid-template-columns:minmax(0,1fr) 92px 24px;
+    grid-template-areas:"s s x" "n m x";
+    padding:6px 4px; row-gap:4px;
+  }
+  .rpick .c-s{grid-area:s} .rpick .c-n{grid-area:n} .rpick .c-m{grid-area:m} .rpick .c-x{grid-area:x}
   .pie-svg{width:140px; height:140px}
 }
 </style>
@@ -270,10 +289,10 @@ const FB='https://www.gstatic.com/firebasejs/10.14.1/';
 
 /* ---------- Constantes ---------- */
 const MESES=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-const SECS=['ingresos','plataformas','egresos','anticipados','fondo'];
+const SECS=['ingresos','plataformas','egresos','anticipados','fondo','retiro'];
 const QS=['q1','q2'];
 const QNAME={q1:'1ra quincena',q2:'2da quincena'};
-const MIN={ingresos:12,plataformas:14,egresos:22,anticipados:18,fondo:6};
+const MIN={ingresos:12,plataformas:14,egresos:22,anticipados:18,fondo:6,retiro:6};
 const MES_RE=/^\d{4}-(0[1-9]|1[0-2])$/;
 const CATS=['Alimentación','Servicios','Transporte','Regalos','Deudas','Alquiler','Salud','Hijos','Entretenimiento','Otros'];
 const PIE_PAL=['#FFCC00','#00247D','#CF142B','#2e7d32','#8e24aa','#ef6c00','#00897b','#5d4037','#546e7a','#ad1457','#1565c0','#757575'];
@@ -307,12 +326,16 @@ function setView(v){
 }
 
 /* ---------- Modelo de datos ---------- */
-const blank=sec=>sec==='plataformas'?{id:uid(),n:'',m:null,d:null,r:true}:{id:uid(),n:'',m:null};
+const blank=sec=>{
+  if(sec==='plataformas') return {id:uid(),n:'',m:null,d:null,r:true};
+  if(sec==='egresos'||sec==='anticipados') return {id:uid(),n:'',m:null,cat:'',pagado:false};
+  return {id:uid(),n:'',m:null};
+};
 const isBlank=(r,sec)=>!String(r.n||'').trim() && r.m==null && (sec!=='plataformas' || r.d==null);
 function normRow(r,sec){
   const o={id:String(r.id||uid()), n:String(r.n==null?'':r.n), m:(typeof r.m==='number'&&isFinite(r.m))?r.m:null};
   if(sec==='plataformas'){ o.d=(typeof r.d==='number'&&r.d>0)?r.d:null; o.r=r.r!==false; }
-  if(sec==='egresos'||sec==='anticipados'){ o.cat=(typeof r.cat==='string'&&CATS.includes(r.cat))?r.cat:''; }
+  if(sec==='egresos'||sec==='anticipados'){ o.cat=(typeof r.cat==='string'&&CATS.includes(r.cat))?r.cat:''; o.pagado=r.pagado===true; }
   return o;
 }
 const autoPlat=qd=>qd.plataformas.filter(p=>p.r && String(p.n).trim());
@@ -384,8 +407,9 @@ function calc(qd){
   const antic=qd.anticipados.reduce((s,r)=>s+num(r.m),0);
   const platTotal=qd.plataformas.reduce((s,p)=>s+num(p.m),0);
   const fondo=qd.fondo.reduce((s,r)=>s+num(r.m),0);
+  const retiro=qd.retiro.reduce((s,r)=>s+num(r.m),0);
   const egresosTotales=egresos+antic;
-  return {mama,ingresos,egresos,antic,egresosTotales,fondo,balance:ingresos-egresosTotales-fondo,platTotal,pct:ingresos>0?egresosTotales/ingresos:0};
+  return {mama,ingresos,egresos,antic,egresosTotales,fondo,retiro,balance:ingresos-egresosTotales-fondo,platTotal,pct:ingresos>0?egresosTotales/ingresos:0};
 }
 
 /* ---------- Estado ---------- */
@@ -493,7 +517,7 @@ function refreshComputed(){
   const C={q1:calc(md.q1),q2:calc(md.q2)};
   const mes={ingresos:C.q1.ingresos+C.q2.ingresos, egresos:C.q1.egresos+C.q2.egresos,
              antic:C.q1.antic+C.q2.antic, egresosTotales:C.q1.egresosTotales+C.q2.egresosTotales,
-             fondo:C.q1.fondo+C.q2.fondo, mama:C.q1.mama+C.q2.mama, platTotal:0};
+             fondo:C.q1.fondo+C.q2.fondo, retiro:C.q1.retiro+C.q2.retiro, mama:C.q1.mama+C.q2.mama, platTotal:0};
   mes.balance=mes.ingresos-mes.egresosTotales-mes.fondo;
   mes.pct=mes.ingresos>0?mes.egresosTotales/mes.ingresos:0;
   C.mes=mes;
@@ -554,7 +578,12 @@ function delBtn(onClick){
   const b=el('button','x'); b.type='button'; b.textContent='×'; b.title='Quitar esta línea'; b.setAttribute('aria-label','Quitar línea');
   b.addEventListener('click',onClick); return b;
 }
-const rowFor=(q,sec,row)=>sec==='plataformas'?platRow(q,row):((sec==='egresos'||sec==='anticipados')?catRow(q,sec,row):simpleRow(q,sec,row));
+const rowFor=(q,sec,row)=>{
+  if(sec==='plataformas') return platRow(q,row);
+  if(sec==='egresos'||sec==='anticipados') return catRow(q,sec,row);
+  if(sec==='retiro') return retiroRow(q,row);
+  return simpleRow(q,sec,row);
+};
 
 function afterEdit(q,sec,row,rowEl){
   rowEl.classList.toggle('blank',isBlank(row,sec));
@@ -563,6 +592,7 @@ function afterEdit(q,sec,row,rowEl){
     const b=blank(sec); arr.push(b); rowEl.parentNode.appendChild(rowFor(q,sec,b));
   }
   if(sec==='plataformas'){ renderList(q,'egresos'); renderList(q,'ingresos'); }
+  if(sec==='anticipados' && document.getElementById(q+'-retiro')){ renderList(q,'retiro'); }
   refreshComputed(); markDirty();
 }
 function simpleRow(q,sec,row){
@@ -581,13 +611,55 @@ function catSelect(val,onChange){
   s.addEventListener('change',()=>onChange(s.value));
   return s;
 }
+function payBtn(row){
+  const b=el('button','pay'); b.type='button';
+  const render=()=>{
+    const p=row.pagado===true;
+    b.textContent=p?'✓':'×';
+    b.classList.toggle('paid',p);
+    b.title=p?'Pagado — tocá para desmarcar':'Sin pagar — tocá para marcar como pagado';
+    b.setAttribute('aria-label',b.title);
+  };
+  render();
+  b.addEventListener('click',()=>{ row.pagado=row.pagado!==true; render(); markDirty(); });
+  return b;
+}
 function catRow(q,sec,row){
   const d=el('div','row r3'+(isBlank(row,sec)?' blank':''));
   const cn=el('div','c-n'); cn.append(txtInput(row.n,'Concepto',v=>{row.n=v; afterEdit(q,sec,row,d);}));
   const cc=el('div','c-c'); cc.append(catSelect(row.cat,v=>{row.cat=v; afterEdit(q,sec,row,d);}));
   const cm=el('div','c-m'); cm.append(moneyInput(()=>row.m,v=>{row.m=v;},()=>refreshComputed(),()=>afterEdit(q,sec,row,d)));
+  const cp=el('div','c-p'); cp.append(payBtn(row));
   const cx=el('div','c-x'); cx.append(delBtn(()=>removeRow(q,sec,row.id)));
-  d.append(cn,cc,cm,cx);
+  d.append(cn,cc,cm,cp,cx);
+  return d;
+}
+function retiroPickSelect(q,onPick){
+  const s=el('select'); s.setAttribute('aria-label','Elegir de Egresos variables');
+  const opt0=el('option'); opt0.value=''; opt0.textContent='Elegir de Egresos variables…'; s.append(opt0);
+  const items=months[cur][q].anticipados.filter(r=>!isBlank(r,'anticipados') && String(r.n).trim());
+  items.forEach(r=>{
+    const o=el('option'); o.value=r.id; o.textContent=(r.n||'—')+' — '+cf.format(num(r.m)); s.append(o);
+  });
+  if(!items.length){ opt0.textContent='No hay gastos cargados en Egresos variables'; }
+  s.addEventListener('change',()=>{
+    if(!s.value) return;
+    const item=items.find(r=>r.id===s.value);
+    if(item) onPick(item);
+    s.value='';
+  });
+  return s;
+}
+function retiroRow(q,row){
+  const d=el('div','row rpick'+(isBlank(row,'retiro')?' blank':''));
+  const cs=el('div','c-s'); cs.append(retiroPickSelect(q,item=>{
+    row.n=String(item.n||''); row.m=(typeof item.m==='number'&&isFinite(item.m))?item.m:null;
+    renderList(q,'retiro'); refreshComputed(); markDirty();
+  }));
+  const cn=el('div','c-n'); cn.append(txtInput(row.n,'Concepto',v=>{row.n=v; afterEdit(q,'retiro',row,d);}));
+  const cm=el('div','c-m'); cm.append(moneyInput(()=>row.m,v=>{row.m=v;},()=>refreshComputed(),()=>afterEdit(q,'retiro',row,d)));
+  const cx=el('div','c-x'); cx.append(delBtn(()=>removeRow(q,'retiro',row.id)));
+  d.append(cs,cn,cm,cx);
   return d;
 }
 function platRow(q,p){
@@ -652,10 +724,12 @@ function card(q,sec,title,totalKey,hint){
   const tot=el('span','tot'); tot.setAttribute('data-k',q+'.'+totalKey); h.append(t,tot); c.append(h);
   if(hint){ const p=el('p','hint'); p.innerHTML=hint.replace('{q}',q); c.append(p); }
   const isCat=(sec==='egresos'||sec==='anticipados');
-  const head=el('div','head '+(sec==='plataformas'?'r5':(isCat?'r3':'r2')));
-  const labels=sec==='plataformas'?['Plataforma','Monto','Entre','C/U','En egr.']:(isCat?[sec==='egresos'?'Gasto':'Concepto','Categoría','Monto']:['Concepto','Monto']);
+  const isRetiro=sec==='retiro';
+  const head=el('div','head '+(sec==='plataformas'?'r5':(isCat?'r3':(isRetiro?'rpick':'r2'))));
+  const labels=sec==='plataformas'?['Plataforma','Monto','Entre','C/U','En egr.']:(isCat?[sec==='egresos'?'Gasto':'Concepto','Categoría','Monto']:(isRetiro?['Elegir de Egresos variables','Concepto','Monto']:['Concepto','Monto']));
   labels.forEach(l=>{const s=el('span'); s.textContent=l; head.append(s);});
   if(sec==='plataformas'){ head.children[2].title='Entre cuántos se divide (3 = Jorge, Josse y Mamá)'; head.children[4].title='Reflejar en Egresos'; }
+  if(isCat){ const sp=el('span'); sp.textContent='Pagado'; head.append(sp); }
   head.append(el('span'));
   c.append(head);
   const list=el('div','list'); list.id=q+'-'+sec; c.append(list);
@@ -680,6 +754,7 @@ function buildQ(q){
   );
   v.append(g);
   v.append(card(q,'fondo','Fondo de emergencia','fondo','Lo que apartes acá se resta del balance de la quincena, como un ahorro aparte.'));
+  v.append(card(q,'retiro','Retiro de efectivo por banco','retiro','Elegí un gasto de <b>Egresos variables</b> y te completa el concepto y el monto solo (lo podés ajustar después). Es solo para saber cuánto sacar: no se resta de nuevo del balance, porque ese gasto ya está contado en Egresos fijos o Egresos variables.'));
   return v;
 }
 function buildResumen(){
@@ -700,6 +775,7 @@ function buildResumen(){
    '<tr><td>Fondo de emergencia</td><td data-k="q1.fondo"></td><td data-k="q2.fondo"></td><td data-k="mes.fondo"></td></tr>'+
    '<tr class="strong"><td>Balance</td><td data-k="q1.balance"></td><td data-k="q2.balance"></td><td data-k="mes.balance"></td></tr>'+
    '<tr><td>% gastado</td><td data-k="q1.pct"></td><td data-k="q2.pct"></td><td data-k="mes.pct"></td></tr>'+
+   '<tr><td>Retiro de efectivo sugerido</td><td data-k="q1.retiro"></td><td data-k="q2.retiro"></td><td data-k="mes.retiro"></td></tr>'+
    '</tbody></table></div></section>'+
    '<section class="card"><header><h2>Ingresos vs. egresos</h2></header><div class="bars">'+
    ['q1','q2'].map(q=>'<div class="bar-grp"><b>'+QNAME[q]+'</b>'+
@@ -921,82 +997,4 @@ function createMonth(id,opts){
 function newMonthDialog(){
   const body=el('div');
   const l1=el('label'); l1.append('Mes: ');
-  const inp=el('input'); inp.type='month'; inp.value=nextMonthId(); inp.className='txt'; inp.setAttribute('aria-label','Mes nuevo'); l1.append(inp);
-  const l2=el('label'); const c1=el('input'); c1.type='checkbox'; c1.checked=true; l2.append(c1,'Copiar plataformas y reparto');
-  const l3=el('label'); const c2=el('input'); c2.type='checkbox'; c2.checked=true; l3.append(c2,'Copiar ingresos (después cambiás los montos)');
-  const note=el('p','small'); note.textContent='Los egresos y gastos anticipados arrancan vacíos. Se copia desde '+monthLabel(cur)+'.';
-  body.append(l1,l2,l3,note);
-  modal('Nuevo mes',body,[
-    {label:'Cancelar'},
-    {label:'Crear mes',cls:'primary',onClick:()=>{
-      const id=inp.value.trim();
-      if(!MES_RE.test(id)){ toast('Escribí el mes como AAAA-MM'); return false; }
-      createMonth(id,{plat:c1.checked,ing:c2.checked});
-    }}
-  ]);
-}
-function askDeleteMonth(){
-  if(Object.keys(months).length<2){ toast('No se puede eliminar el único mes'); return; }
-  const id=cur;
-  const p=el('p'); p.textContent='Se borran las dos quincenas de '+monthLabel(id)+'. Esto no se puede deshacer.';
-  modal('¿Eliminar '+monthLabel(id)+'?',p,[
-    {label:'Cancelar'},
-    {label:'Eliminar',cls:'danger solid',onClick:async()=>{
-      dirty.delete(id);
-      try{ await FS.deleteDoc(FS.doc(db,'libro',id)); }catch(e){ toast('No se pudo eliminar'); return; }
-      delete months[id];
-      const all=Object.keys(months).sort(); cur=all[all.length-1]; render(); toast('Mes eliminado');
-    }}
-  ]);
-}
-
-/* ---------- Eventos ---------- */
-$('#mes').addEventListener('change',e=>{ cur=e.target.value; render(); });
-$('#nuevoMes').addEventListener('click',newMonthDialog);
-document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{ tab=t.dataset.tab; showTab(); window.scrollTo(0,0); }));
-$('#salir').addEventListener('click',()=>{ if(auth) AU.signOut(auth); });
-
-function loginError(e){
-  const c=(e&&e.code)||'';
-  if(/invalid-credential|wrong-password|user-not-found|invalid-email|missing-password/.test(c)) return 'Correo o clave incorrectos.';
-  if(c==='auth/too-many-requests') return 'Demasiados intentos. Esperá unos minutos y probá de nuevo.';
-  if(c==='auth/network-request-failed') return 'Sin conexión a internet.';
-  if(c==='auth/unauthorized-domain') return 'Este dominio no está autorizado en Firebase (ver LEEME).';
-  return 'No se pudo ingresar ('+(c||'error')+').';
-}
-$('#loginForm').addEventListener('submit',async ev=>{
-  ev.preventDefault();
-  const btn=$('#lBtn'); $('#lErr').textContent=''; btn.disabled=true;
-  try{ await AU.signInWithEmailAndPassword(auth,$('#lEmail').value.trim(),$('#lPass').value); $('#lPass').value=''; }
-  catch(e){ $('#lErr').textContent=loginError(e); }
-  finally{ btn.disabled=false; }
-});
-$('#lReset').addEventListener('click',async()=>{
-  const email=$('#lEmail').value.trim();
-  if(!email){ $('#lErr').textContent='Escribí tu correo arriba y tocá de nuevo.'; return; }
-  try{ await AU.sendPasswordResetEmail(auth,email); $('#lErr').textContent=''; toast('Si el correo existe, te llegó un mensaje para cambiar la clave'); }
-  catch(e){ $('#lErr').textContent=loginError(e); }
-});
-
-/* ---------- Arranque ---------- */
-async function boot(){
-  setView('loading'); $('#loadingMsg').textContent='Cargando…';
-  let cfg;
-  try{ cfg=(await import('./firebase-config.js')).firebaseConfig; }catch(e){ cfg=null; }
-  if(!cfg || !cfg.apiKey || /PEGAR/.test(cfg.apiKey+cfg.projectId)){ setView('setup'); return; }
-  try{
-    const [A,AUm,FSm]=await Promise.all([import(FB+'firebase-app.js'),import(FB+'firebase-auth.js'),import(FB+'firebase-firestore.js')]);
-    AU=AUm; FS=FSm;
-    fbApp=A.initializeApp(cfg); auth=AU.getAuth(fbApp); db=FS.getFirestore(fbApp);
-  }catch(e){
-    $('#loadingMsg').textContent='No se pudo cargar Firebase. Revisá tu conexión a internet y recargá.'; return;
-  }
-  AU.onAuthStateChanged(auth,user=>{
-    if(user){ me=user; startData(); }
-    else { me=null; stopData(); setView('login'); }
-  });
-}
-boot();
-</script>
-</body>
-</html>
+  const inp=el('input'); inp.type='month'; inp.value=nex
