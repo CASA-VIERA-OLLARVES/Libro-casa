@@ -997,4 +997,83 @@ function createMonth(id,opts){
 function newMonthDialog(){
   const body=el('div');
   const l1=el('label'); l1.append('Mes: ');
-  const inp=el('input'); inp.type='month'; inp.value=nex
+  const inp=el('input'); inp.type='month'; inp.value=nextMonthId(); inp.className='txt'; inp.setAttribute('aria-label','Mes nuevo'); l1.append(inp);
+  const l2=el('label'); const c1=el('input'); c1.type='checkbox'; c1.checked=true; l2.append(c1,'Copiar plataformas y reparto');
+  const l3=el('label'); const c2=el('input'); c2.type='checkbox'; c2.checked=true; l3.append(c2,'Copiar ingresos (después cambiás los montos)');
+  const note=el('p','small'); note.textContent='Los egresos y gastos anticipados arrancan vacíos. Se copia desde '+monthLabel(cur)+'.';
+  body.append(l1,l2,l3,note);
+  modal('Nuevo mes',body,[
+    {label:'Cancelar'},
+    {label:'Crear mes',cls:'primary',onClick:()=>{
+      const id=inp.value.trim();
+      if(!MES_RE.test(id)){ toast('Escribí el mes como AAAA-MM'); return false; }
+      createMonth(id,{plat:c1.checked,ing:c2.checked});
+    }}
+  ]);
+}
+function askDeleteMonth(){
+  if(Object.keys(months).length<2){ toast('No se puede eliminar el único mes'); return; }
+  const id=cur;
+  const p=el('p'); p.textContent='Se borran las dos quincenas de '+monthLabel(id)+'. Esto no se puede deshacer.';
+  modal('¿Eliminar '+monthLabel(id)+'?',p,[
+    {label:'Cancelar'},
+    {label:'Eliminar',cls:'danger solid',onClick:async()=>{
+      dirty.delete(id);
+      try{ await FS.deleteDoc(FS.doc(db,'libro',id)); }catch(e){ toast('No se pudo eliminar'); return; }
+      delete months[id];
+      const all=Object.keys(months).sort(); cur=all[all.length-1]; render(); toast('Mes eliminado');
+    }}
+  ]);
+}
+
+/* ---------- Eventos ---------- */
+$('#mes').addEventListener('change',e=>{ cur=e.target.value; render(); });
+$('#nuevoMes').addEventListener('click',newMonthDialog);
+document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{ tab=t.dataset.tab; showTab(); window.scrollTo(0,0); }));
+$('#salir').addEventListener('click',()=>{ if(auth) AU.signOut(auth); });
+
+function loginError(e){
+  const c=(e&&e.code)||'';
+  if(/invalid-credential|wrong-password|user-not-found|invalid-email|missing-password/.test(c)) return 'Correo o clave incorrectos.';
+  if(c==='auth/too-many-requests') return 'Demasiados intentos. Esperá unos minutos y probá de nuevo.';
+  if(c==='auth/network-request-failed') return 'Sin conexión a internet.';
+  if(c==='auth/unauthorized-domain') return 'Este dominio no está autorizado en Firebase (ver LEEME).';
+  return 'No se pudo ingresar ('+(c||'error')+').';
+}
+$('#loginForm').addEventListener('submit',async ev=>{
+  ev.preventDefault();
+  const btn=$('#lBtn'); $('#lErr').textContent=''; btn.disabled=true;
+  try{ await AU.signInWithEmailAndPassword(auth,$('#lEmail').value.trim(),$('#lPass').value); $('#lPass').value=''; }
+  catch(e){ $('#lErr').textContent=loginError(e); }
+  finally{ btn.disabled=false; }
+});
+$('#lReset').addEventListener('click',async()=>{
+  const email=$('#lEmail').value.trim();
+  if(!email){ $('#lErr').textContent='Escribí tu correo arriba y tocá de nuevo.'; return; }
+  try{ await AU.sendPasswordResetEmail(auth,email); $('#lErr').textContent=''; toast('Si el correo existe, te llegó un mensaje para cambiar la clave'); }
+  catch(e){ $('#lErr').textContent=loginError(e); }
+});
+
+/* ---------- Arranque ---------- */
+async function boot(){
+  setView('loading'); $('#loadingMsg').textContent='Cargando…';
+  let cfg;
+  try{ cfg=(await import('./firebase-config.js')).firebaseConfig; }catch(e){ cfg=null; }
+  if(!cfg || !cfg.apiKey || /PEGAR/.test(cfg.apiKey+cfg.projectId)){ setView('setup'); return; }
+  try{
+    const [A,AUm,FSm]=await Promise.all([import(FB+'firebase-app.js'),import(FB+'firebase-auth.js'),import(FB+'firebase-firestore.js')]);
+    AU=AUm; FS=FSm;
+    fbApp=A.initializeApp(cfg); auth=AU.getAuth(fbApp); db=FS.getFirestore(fbApp);
+  }catch(e){
+    $('#loadingMsg').textContent='No se pudo cargar Firebase. Revisá tu conexión a internet y recargá.'; return;
+  }
+  AU.onAuthStateChanged(auth,user=>{
+    if(user){ me=user; startData(); }
+    else { me=null; stopData(); setView('login'); }
+  });
+}
+boot();
+</script>
+</body>
+</html>
+
