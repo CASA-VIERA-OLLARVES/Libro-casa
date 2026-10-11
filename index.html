@@ -7,6 +7,12 @@
 <meta name="theme-color" content="#1f3864">
 <title>Casa Viera Ollarves · Ingresos y egresos</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%93%92%3C/text%3E%3C/svg%3E">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Casa V.O.">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <style>
 :root{
   --bg:#f3f5fa; --card:#ffffff; --ink:#1b2333; --muted:#6b7488; --line:#e5e9f1;
@@ -262,6 +268,7 @@ table.tbl{width:100%; border-collapse:collapse; margin-top:8px}
     <div class="controls" id="controls" hidden>
       <select id="mes" aria-label="Mes"></select>
       <button class="btn" id="nuevoMes" type="button">＋ Nuevo mes</button>
+      <button class="btn primary" id="installBtn" type="button" hidden>⬇ Instalar app</button>
       <span class="pill" id="status" role="status"></span>
       <button class="btn" id="salir" type="button">Salir</button>
     </div>
@@ -1171,6 +1178,24 @@ $('#nuevoMes').addEventListener('click',newMonthDialog);
 document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{ tab=t.dataset.tab; showTab(); window.scrollTo(0,0); }));
 $('#salir').addEventListener('click',()=>{ if(auth) AU.signOut(auth); });
 
+/* ---------- Instalar como app (Android/Windows) ---------- */
+let deferredInstall=null;
+window.addEventListener('beforeinstallprompt',e=>{
+  e.preventDefault(); deferredInstall=e; $('#installBtn').hidden=false;
+});
+$('#installBtn').addEventListener('click',async()=>{
+  if(!deferredInstall) return;
+  $('#installBtn').hidden=true;
+  deferredInstall.prompt();
+  try{ await deferredInstall.userChoice; }catch(e){}
+  deferredInstall=null;
+});
+window.addEventListener('appinstalled',()=>{ $('#installBtn').hidden=true; deferredInstall=null; toast('Instalada. Ya la tenés en tu equipo.'); });
+if(window.matchMedia('(display-mode: standalone)').matches || navigator.standalone){ $('#installBtn').hidden=true; }
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>{ navigator.serviceWorker.register('service-worker.js').catch(()=>{}); });
+}
+
 function loginError(e){
   const c=(e&&e.code)||'';
   if(/invalid-credential|wrong-password|user-not-found|invalid-email|missing-password/.test(c)) return 'Correo o clave incorrectos.';
@@ -1215,4 +1240,3 @@ boot();
 </script>
 </body>
 </html>
-
