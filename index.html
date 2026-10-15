@@ -1138,6 +1138,7 @@ function downloadBlob(blob,filename){
   document.body.append(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href),1500);
 }
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function buildMamaHTML(md){
   const G='#1b2333', GOLD='#FFCC00', BLUE='#00247D', RED='#CF142B';
   let body='<div style="font-family:system-ui,Arial,sans-serif;background:#fff;color:'+G+';width:680px;padding:28px 32px;">'+
@@ -1158,7 +1159,7 @@ function buildMamaHTML(md){
     let i=0;
     filas.forEach(p=>{
       const cu=(p.m!=null)?p.m/p.d:0; sub+=cu;
-      body+='<tr style="background:'+(i%2?'#f2f5fb':'#fff')+';"><td style="padding:6px 8px;">'+(p.n||'—')+'</td>'+
+      body+='<tr style="background:'+(i%2?'#f2f5fb':'#fff')+';"><td style="padding:6px 8px;">'+esc(p.n||'—')+'</td>'+
         '<td style="text-align:right;padding:6px 8px;">'+cf.format(num(p.m))+'</td>'+
         '<td style="text-align:center;padding:6px 8px;">'+p.d+'</td>'+
         '<td style="text-align:right;padding:6px 8px;font-weight:600;">'+cf.format(cu)+'</td></tr>';
@@ -1482,7 +1483,7 @@ async function resolveHogar(){
       try{ await linkCodeToAccount(code); startData(); return; }
       catch(e){ await showNoHogar(); $('#nhErr').textContent=e.message||'No se pudo vincular el código.'; return; }
     }
-  }catch(e){ /* sigue abajo */ }
+  }catch(e){ console.error('resolveHogar:',e); }
   await showNoHogar();
 }
 async function showNoHogar(){

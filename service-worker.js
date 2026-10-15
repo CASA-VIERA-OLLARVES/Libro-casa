@@ -4,13 +4,16 @@
 // (html2canvas, jsPDF) NUNCA pasan por acá: siempre van directo a internet.
 //
 // Si alguna vez hacés un cambio grande y querés forzar que todos bajen la
-// versión nueva, cambiá el número de CACHE_NAME (ej: 'cvo-shell-v2').
-const CACHE_NAME = 'cvo-shell-v1';
+// versión nueva, cambiá el número de CACHE_NAME (ej: 'cvo-shell-v3').
+const CACHE_NAME = 'cvo-shell-v2';
 const SHELL = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png', './icon-maskable.png'];
 
 self.addEventListener('install', event => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting())
+    caches.open(CACHE_NAME)
+      // Se guarda archivo por archivo: si falta un ícono, no se cae todo el service worker.
+      .then(cache => Promise.all(SHELL.map(url => cache.add(url).catch(() => {}))))
+      .then(() => self.skipWaiting())
   );
 });
 
@@ -34,7 +37,10 @@ self.addEventListener('fetch', event => {
     // y si no hay conexión, se muestra la última copia guardada.
     event.respondWith(
       fetch(req)
-        .then(res => { caches.open(CACHE_NAME).then(c => c.put(req, res.clone())); return res; })
+        .then(res => {
+          if (res && res.ok) { const copy = res.clone(); caches.open(CACHE_NAME).then(c => c.put(req, copy)); }
+          return res;
+        })
         .catch(() => caches.match(req).then(r => r || caches.match('./index.html')))
     );
     return;
@@ -44,7 +50,10 @@ self.addEventListener('fetch', event => {
   event.respondWith(
     caches.match(req).then(cached => {
       const fresh = fetch(req)
-        .then(res => { caches.open(CACHE_NAME).then(c => c.put(req, res.clone())); return res; })
+        .then(res => {
+          if (res && res.ok) { const copy = res.clone(); caches.open(CACHE_NAME).then(c => c.put(req, copy)); }
+          return res;
+        })
         .catch(() => cached);
       return cached || fresh;
     })
