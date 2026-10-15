@@ -569,8 +569,7 @@ function onRemote(map,definitive){
     if(!map[id] && !dirty.has(id) && inflight!==id){ delete months[id]; changed=true; }
   });
   if(!months[cur]){
-    const all=Object.keys(months).sort();
-    cur=all.length?all[all.length-1]:null; changed=true;
+    cur=defaultMonthId(); changed=true;
   }
   if(!ready && definitive){
     ready=true; clearTimeout(loadTimer); setView('app'); changed=true; setStatus('ready');
@@ -1276,6 +1275,15 @@ function modal(title,body,actions){
   root.append(ov); document.addEventListener('keydown',escClose);
 }
 function currentMonthId(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
+// Mes que se muestra por defecto: el mes actual del calendario si existe;
+// si no existe, el más cercano anterior; si todos son futuros, el primero.
+function defaultMonthId(){
+  const ids=Object.keys(months).sort(); if(!ids.length) return null;
+  const hoy=currentMonthId();
+  if(months[hoy]) return hoy;
+  const antes=ids.filter(id=>id<hoy);
+  return antes.length?antes[antes.length-1]:ids[0];
+}
 function nextMonthId(){
   const ids=Object.keys(months).sort(); if(!ids.length) return currentMonthId();
   const last=ids[ids.length-1];
@@ -1324,7 +1332,7 @@ function askDeleteMonth(){
       dirty.delete(id);
       try{ await FS.deleteDoc(mesDocRef(id)); }catch(e){ toast('No se pudo eliminar'); return; }
       delete months[id];
-      const all=Object.keys(months).sort(); cur=all[all.length-1]; render(); toast('Mes eliminado');
+      cur=defaultMonthId(); render(); toast('Mes eliminado');
     }}
   ]);
 }
