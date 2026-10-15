@@ -145,6 +145,15 @@ input.mid{text-align:center}
 .tcField input,.tcField select{border:1px solid var(--line); background:var(--field); color:inherit; font:inherit; font-size:13px; padding:6px 8px; border-radius:8px; width:100%}
 .tcField input:focus,.tcField select:focus{outline:2px solid var(--accent); outline-offset:-1px}
 .amt-ro{font-variant-numeric:tabular-nums; font-weight:700; padding:6px 0; color:var(--ink)}
+.fijoBox{background:var(--soft); border-radius:10px; padding:10px 12px; margin:0 4px 10px; display:grid; gap:6px}
+.fijoBox.fijoRO{background:var(--chip)}
+.fijoTitle{font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); font-weight:700}
+.fijoRow{display:flex; align-items:center; gap:10px; flex-wrap:wrap}
+.fijoLab{flex:1; min-width:160px; font-size:13px}
+.fijoRow input{width:150px; max-width:100%; border:1px solid var(--line); background:var(--field); color:inherit; font:inherit; font-size:13px; padding:7px 9px; border-radius:8px}
+.fijoRow input:focus{outline:2px solid var(--accent); outline-offset:-1px}
+.fijoRow input.txt{width:220px}
+.fijoInfo{font-size:12px; color:var(--muted); margin:0}
 .tcRO{background:var(--soft); border-radius:10px; padding:8px 10px; margin-bottom:2px; border-bottom:0}
 .tcRO .l1{justify-content:space-between; gap:8px}
 .tcRO .tag{font-size:10px; flex:0 0 auto}
@@ -331,7 +340,7 @@ const FB='https://www.gstatic.com/firebasejs/10.14.1/';
 /* ---------- Constantes ---------- */
 const MESES=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 const SECS=['ingresos','plataformas','egresos','anticipados','fondo','retiro','tarjeta'];
-const CUOTAS_OPC=[1,2,3,6,9,12];
+const CUOTAS_OPC=[1,2,3,4,5,6,7,8,9,10,11,12];
 const QS=['q1','q2'];
 const QNAME={q1:'1ra quincena',q2:'2da quincena'};
 const MIN={ingresos:12,plataformas:14,egresos:22,anticipados:18,fondo:6,retiro:6,tarjeta:10};
@@ -427,8 +436,18 @@ function buildPieSVG(totals){
   const legend=entries.map(([k,v],i)=>({color:PIE_PAL[i%PIE_PAL.length],label:k,amt:v,pct:total>0?v/total:0}));
   return {svg,legend,total};
 }
+function numOrNull(v){ return (typeof v==='number'&&isFinite(v))?v:null; }
+function normMonthFields(src){
+  return {
+    alquilerMonto: numOrNull(src&&src.alquilerMonto),
+    alquilerAumento: (src&&typeof src.alquilerAumento==='string')?src.alquilerAumento:'',
+    limiteTarjeta: numOrNull(src&&src.limiteTarjeta),
+    diezmoJorge: numOrNull(src&&src.diezmoJorge),
+    diezmoJossely: numOrNull(src&&src.diezmoJossely)
+  };
+}
 function hydrate(src){
-  const md={v:1};
+  const md={v:1, ...normMonthFields(src)};
   QS.forEach(q=>{
     md[q]={};
     SECS.forEach(sec=>{
@@ -440,7 +459,7 @@ function hydrate(src){
   return md;
 }
 function serialize(md){
-  const o={v:1};
+  const o={v:1, ...normMonthFields(md)};
   QS.forEach(q=>{
     o[q]={};
     SECS.forEach(sec=>{ o[q][sec]=md[q][sec].filter(r=>!isBlank(r,sec)).map(r=>normRow(r,sec)); });
@@ -467,18 +486,27 @@ function activeCuotasFor(monthId,q){
   return out;
 }
 const monthTarjetaTotal=(monthId,q)=>activeCuotasFor(monthId,q).reduce((s,it)=>s+it.amount,0);
-function calc(qd){
+const alquilerQuincena=md=>(md&&md.alquilerMonto!=null)?md.alquilerMonto/2:0;
+const alquilerMamaQuincena=md=>(md&&md.alquilerMonto!=null)?md.alquilerMonto/3/2:0;
+const diezmoJorgeQuincena=md=>(md&&md.diezmoJorge!=null)?md.diezmoJorge/2:0;
+const diezmoJosseQuincena=md=>(md&&md.diezmoJossely!=null)?md.diezmoJossely/2:0;
+const hasMamaAny=(qd,md)=>hasMama(qd)||(md&&md.alquilerMonto!=null);
+function calc(qd,md){
   const cu=p=>(p.d>0&&p.m!=null)?p.m/p.d:0;
   const mama=qd.plataformas.reduce((s,p)=>s+cu(p),0);
+  const mamaAlquiler=alquilerMamaQuincena(md);
+  const mamaTotal=(hasMama(qd)?mama:0)+mamaAlquiler;
   const ingManual=qd.ingresos.reduce((s,r)=>s+num(r.m),0);
-  const ingresos=ingManual+(hasMama(qd)?mama:0);
-  const egresos=autoPlat(qd).reduce((s,p)=>s+num(p.m),0)+qd.egresos.reduce((s,r)=>s+num(r.m),0);
+  const ingresos=ingManual+mamaTotal;
+  const fijosExtra=alquilerQuincena(md)+diezmoJorgeQuincena(md)+diezmoJosseQuincena(md);
+  const egresos=autoPlat(qd).reduce((s,p)=>s+num(p.m),0)+qd.egresos.reduce((s,r)=>s+num(r.m),0)+fijosExtra;
   const antic=qd.anticipados.reduce((s,r)=>s+num(r.m),0);
   const platTotal=qd.plataformas.reduce((s,p)=>s+num(p.m),0);
   const fondo=qd.fondo.reduce((s,r)=>s+num(r.m),0);
   const retiro=qd.retiro.reduce((s,r)=>s+num(r.m),0);
   const egresosTotales=egresos+antic;
-  return {mama,ingresos,egresos,antic,egresosTotales,fondo,retiro,balance:ingresos-egresosTotales-fondo,platTotal,pct:ingresos>0?egresosTotales/ingresos:0};
+  return {mama,mamaAlquiler,mamaTotal,ingresos,egresos,antic,egresosTotales,fondo,retiro,balance:ingresos-egresosTotales-fondo,platTotal,pct:ingresos>0?egresosTotales/ingresos:0,
+    alquilerQ:alquilerQuincena(md), diezmoJQ:diezmoJorgeQuincena(md), diezmoJoQ:diezmoJosseQuincena(md)};
 }
 
 /* ---------- Estado ---------- */
@@ -591,14 +619,20 @@ function stopData(){
 /* ---------- Cálculos en pantalla ---------- */
 function refreshComputed(){
   const md=months[cur]; if(!md) return;
-  const C={q1:calc(md.q1),q2:calc(md.q2)};
+  const C={q1:calc(md.q1,md),q2:calc(md.q2,md)};
   C.q1.tarjeta=monthTarjetaTotal(cur,'q1'); C.q2.tarjeta=monthTarjetaTotal(cur,'q2');
+  QS.forEach(qq=>{
+    const items=activeCuotasFor(cur,qq);
+    C[qq].tarjetaSimple=items.filter(it=>it.totalCuotas===1).reduce((s,it)=>s+it.amount,0);
+    C[qq].tarjetaCuotas=items.filter(it=>it.totalCuotas>1).reduce((s,it)=>s+it.amount,0);
+  });
   const mes={ingresos:C.q1.ingresos+C.q2.ingresos, egresos:C.q1.egresos+C.q2.egresos,
              antic:C.q1.antic+C.q2.antic, egresosTotales:C.q1.egresosTotales+C.q2.egresosTotales,
              fondo:C.q1.fondo+C.q2.fondo, retiro:C.q1.retiro+C.q2.retiro, tarjeta:C.q1.tarjeta+C.q2.tarjeta,
              mama:C.q1.mama+C.q2.mama, platTotal:0};
   mes.balance=mes.ingresos-mes.egresosTotales-mes.fondo;
   mes.pct=mes.ingresos>0?mes.egresosTotales/mes.ingresos:0;
+  mes.disponibleTarjeta=(months[cur].limiteTarjeta!=null)?(months[cur].limiteTarjeta-mes.tarjeta):0;
   C.mes=mes;
   document.querySelectorAll('[data-k]').forEach(e=>{
     const p=e.dataset.k.split('.'); const v=C[p[0]]&&C[p[0]][p[1]]; if(v===undefined) return;
@@ -627,6 +661,9 @@ function renderPie(md){
   const totals=monthCategoryTotals(md);
   const tc=monthTarjetaTotal(cur,'q1')+monthTarjetaTotal(cur,'q2');
   if(tc>0) totals['Tarjeta de crédito']=(totals['Tarjeta de crédito']||0)+tc;
+  if(md.alquilerMonto!=null && md.alquilerMonto>0) totals['Alquiler']=(totals['Alquiler']||0)+md.alquilerMonto;
+  const diezmoTotal=num(md.diezmoJorge)+num(md.diezmoJossely);
+  if(diezmoTotal>0) totals['Diezmo']=(totals['Diezmo']||0)+diezmoTotal;
   const {svg,legend,total}=buildPieSVG(totals);
   const rows=legend.map(e=>
     '<div class="pie-row"><span class="pie-dot" style="background:'+e.color+'"></span>'+
@@ -863,7 +900,7 @@ function renderList(q,sec){
   const qd=months[cur][q]; padSec(qd,sec);
   host.replaceChildren();
   if(sec==='egresos') autoPlat(qd).forEach(p=>host.append(autoRow(p.n,'Plataformas','data-aut',p.id)));
-  if(sec==='ingresos' && hasMama(qd)) host.append(autoRow('Dinero dado por Mamá','Según plataformas','data-k',q+'.mama'));
+  if(sec==='ingresos' && hasMamaAny(qd,months[cur])) host.append(autoRow('Dinero dado por Mamá','Plataformas + alquiler','data-k',q+'.mamaTotal'));
   if(sec==='tarjeta') activeCuotasFor(cur,q).filter(it=>!it.isOrigin).forEach(it=>host.append(tarjetaCarriedItem(it)));
   qd[sec].forEach(r=>host.append(rowFor(q,sec,r)));
   refreshComputed();
@@ -884,11 +921,63 @@ function addLine(q,sec){
 }
 
 /* ---------- Vistas ---------- */
+function moneyField(label,get,set,ph){
+  const wrap=el('div','fijoRow');
+  const lab=el('div','fijoLab'); lab.textContent=label; wrap.append(lab);
+  const inp=el('input'); inp.type='text'; inp.inputMode='decimal'; inp.className='num'; inp.placeholder=ph||'Monto';
+  inp.setAttribute('aria-label',label); inp.autocomplete='off'; inp.value=fmt(get());
+  inp.addEventListener('focus',()=>inp.select());
+  inp.addEventListener('input',()=>{ const v=parseMoney(inp.value); if(!Number.isNaN(v)){ set(v); refreshComputed(); } });
+  inp.addEventListener('change',()=>{
+    const v=parseMoney(inp.value);
+    if(Number.isNaN(v)){ inp.value=fmt(get()); toast('Ese monto no es válido'); return; }
+    set(v); inp.value=fmt(v); refreshComputed(); markDirty();
+  });
+  wrap.append(inp);
+  return {wrap,inp};
+}
+function buildFijosFijoEditable(){
+  const box=el('div','fijoBox');
+  const title=el('p','fijoTitle'); title.textContent='Gastos fijos del mes (se dividen mitad y mitad entre las dos quincenas)';
+  box.append(title);
+  const info=el('p','fijoInfo');
+  const syncInfo=()=>{
+    const md=months[cur];
+    info.textContent = md.alquilerMonto!=null
+      ? ('Por quincena: '+cf.format(alquilerQuincena(md))+' · Aporte de Mamá por quincena: '+cf.format(alquilerMamaQuincena(md)))
+      : 'Cargá el monto del alquiler para ver cómo se divide.';
+  };
+  const mf=moneyField('Alquiler (total del mes)',()=>months[cur].alquilerMonto,v=>{months[cur].alquilerMonto=v; syncInfo();});
+  box.append(mf.wrap); syncInfo(); box.append(info);
+
+  const aumWrap=el('div','fijoRow');
+  const aumLab=el('div','fijoLab'); aumLab.textContent='Próximo aumento (nota, no se aplica solo)'; aumWrap.append(aumLab);
+  const aumIn=el('input'); aumIn.type='text'; aumIn.className='txt'; aumIn.setAttribute('aria-label','Próximo aumento del alquiler');
+  aumIn.placeholder='Ej: Nov: pasa a $900.000'; aumIn.value=months[cur].alquilerAumento||'';
+  aumIn.addEventListener('change',()=>{ months[cur].alquilerAumento=aumIn.value; markDirty(); });
+  aumWrap.append(aumIn); box.append(aumWrap);
+
+  const mj=moneyField('Diezmo Jorge (total del mes)',()=>months[cur].diezmoJorge,v=>{months[cur].diezmoJorge=v;});
+  box.append(mj.wrap);
+  const mjo=moneyField('Diezmo Jossely (total del mes)',()=>months[cur].diezmoJossely,v=>{months[cur].diezmoJossely=v;});
+  box.append(mjo.wrap);
+  return box;
+}
+function buildFijosFijoResumen(q){
+  const box=el('div','fijoBox fijoRO');
+  const title=el('p','fijoTitle'); title.textContent='Gastos fijos del mes (se editan en la 1ra quincena)';
+  box.append(title);
+  const line=el('p','small');
+  line.innerHTML='Alquiler (mitad): <b data-k="'+q+'.alquilerQ"></b> · Diezmo Jorge: <b data-k="'+q+'.diezmoJQ"></b> · Diezmo Jossely: <b data-k="'+q+'.diezmoJoQ"></b>';
+  box.append(line);
+  return box;
+}
 function card(q,sec,title,totalKey,hint){
   const c=el('section','card'); c.dataset.sec=sec;
   const h=el('header'); const t=el('h2'); t.textContent=title;
   const tot=el('span','tot'); tot.setAttribute('data-k',q+'.'+totalKey); h.append(t,tot); c.append(h);
   if(hint){ const p=el('p','hint'); p.innerHTML=hint.replace('{q}',q); c.append(p); }
+  if(sec==='egresos'){ c.append(q==='q1'?buildFijosFijoEditable():buildFijosFijoResumen(q)); }
   const isCat=(sec==='egresos'||sec==='anticipados');
   const isRetiro=sec==='retiro';
   const isTarjeta=sec==='tarjeta';
@@ -924,7 +1013,12 @@ function buildQ(q){
   v.append(g);
   v.append(card(q,'fondo','Fondo de emergencia','fondo','Lo que apartes acá se resta del balance de la quincena, como un ahorro aparte.'));
   v.append(card(q,'retiro','Retiro de efectivo por banco','retiro','Elegí un gasto de <b>Egresos variables</b> y te completa el concepto y el monto solo (lo podés ajustar después). Es solo para saber cuánto sacar: no se resta de nuevo del balance, porque ese gasto ya está contado en Egresos fijos o Egresos variables.'));
-  v.append(card(q,'tarjeta','Gastos tarjeta de crédito','tarjeta','El valor de la cuota se autocompleta (Monto ÷ cuotas), editalo si el banco cobra interés. Elegí el mes de la <b>1ª cuota</b> y las siguientes van a aparecer solas (de solo lectura) en los meses que vengan, hasta agotarse. Entra en el gráfico de torta como "Tarjeta de crédito". Es informativo: no se resta del balance, porque el pago de la tarjeta ya lo cargás aparte en Egresos.'));
+  const tarjCard=card(q,'tarjeta','Gastos tarjeta de crédito','tarjeta','El valor de la cuota se autocompleta (Monto ÷ cuotas), editalo si el banco cobra interés. Elegí el mes de la <b>1ª cuota</b> y las siguientes van a aparecer solas (de solo lectura) en los meses que vengan, hasta agotarse. Entra en el gráfico de torta como "Tarjeta de crédito". Es informativo: no se resta del balance, porque el pago de la tarjeta ya lo cargás aparte en Egresos.');
+  const sums=el('div','kpis'); sums.style.cssText='margin:4px 4px 0; gap:10px';
+  sums.innerHTML='<div class="kpi" style="padding:10px 12px"><span>Pagos simples</span><b style="font-size:16px" data-k="'+q+'.tarjetaSimple"></b></div>'+
+    '<div class="kpi" style="padding:10px 12px"><span>En cuotas</span><b style="font-size:16px" data-k="'+q+'.tarjetaCuotas"></b></div>';
+  tarjCard.append(sums);
+  v.append(tarjCard);
   return v;
 }
 function buildResumen(){
@@ -956,6 +1050,13 @@ function buildResumen(){
    '<section class="card" style="margin-top:16px"><header><h2>Egresos del mes por categoría</h2></header>'+
    '<p class="hint">Se arma con la categoría que le pongas a cada línea de Egresos fijos y Egresos variables.</p>'+
    '<div class="pie-wrap" id="pieWrap"></div></section>'+
+   '<section class="card" style="margin-top:16px"><header><h2>Tarjeta de crédito</h2></header>'+
+   '<p class="hint">Cargá el límite una sola vez; queda guardado para los meses siguientes.</p>'+
+   '<div class="kpis" style="margin-top:4px">'+
+   '<div class="kpi"><span>Límite de la tarjeta</span><div id="limiteTarjetaWrap"></div></div>'+
+   '<div class="kpi"><span>Gastado este mes</span><b data-k="mes.tarjeta"></b></div>'+
+   '<div class="kpi soft"><span>Disponible</span><b data-k="mes.disponibleTarjeta"></b></div>'+
+   '</div></section>'+
    '<section class="card" style="margin-top:16px"><header><h2>Tu hogar</h2></header>'+
    '<p class="hint" id="hogarNombre"></p>'+
    '<p class="small">Para que tu pareja vea este mismo libro: que cree su cuenta en "Crear cuenta" usando este código.</p>'+
@@ -966,6 +1067,9 @@ function buildResumen(){
    '<p class="hint" style="margin-top:14px">Para compartir con Mamá o guardar todo el mes impreso:</p>'+
    '<div class="tools" id="toolsExport"></div>'+
    '<p class="small" id="sesion" style="margin-top:14px"></p></section>';
+  const lf=moneyField('',()=>months[cur].limiteTarjeta,v2=>{months[cur].limiteTarjeta=v2;},'Límite');
+  lf.wrap.style.cssText='gap:0; margin:0'; lf.inp.style.cssText='width:100%; font-size:20px; font-weight:700; padding:0; border:0; background:transparent';
+  $('#limiteTarjetaWrap',v).append(lf.inp);
   const tools=$('#tools',v);
   const b1=el('button','btn'); b1.type='button'; b1.textContent='Descargar respaldo (.json)'; b1.addEventListener('click',exportBackup);
   const b2=el('button','btn'); b2.type='button'; b2.textContent='Importar respaldo (.json)'; b2.addEventListener('click',()=>$('#fileImp').click());
@@ -1042,7 +1146,8 @@ function buildMamaHTML(md){
     '<p style="margin:2px 0 20px;color:#6b7488;font-size:13px;">Resumen para Mamá · '+monthLabel(cur)+'</p>';
   let granTotal=0;
   QS.forEach(q=>{
-    const qd=md[q]; if(!hasMama(qd)) return;
+    const qd=md[q]; const alqM=alquilerMamaQuincena(md);
+    if(!hasMama(qd) && alqM<=0) return;
     const filas=qd.plataformas.filter(p=>p.d>0);
     let sub=0;
     body+='<h2 style="font-size:15px;color:'+G+';margin:18px 0 8px;">'+QNAME[q]+'</h2>'+
@@ -1050,13 +1155,22 @@ function buildMamaHTML(md){
       '<tr style="background:'+BLUE+';color:#fff;"><th style="text-align:left;padding:6px 8px;">Plataforma</th>'+
       '<th style="text-align:right;padding:6px 8px;">Monto</th><th style="text-align:center;padding:6px 8px;">Entre</th>'+
       '<th style="text-align:right;padding:6px 8px;">C/U</th></tr>';
-    filas.forEach((p,i)=>{
+    let i=0;
+    filas.forEach(p=>{
       const cu=(p.m!=null)?p.m/p.d:0; sub+=cu;
       body+='<tr style="background:'+(i%2?'#f2f5fb':'#fff')+';"><td style="padding:6px 8px;">'+(p.n||'—')+'</td>'+
         '<td style="text-align:right;padding:6px 8px;">'+cf.format(num(p.m))+'</td>'+
         '<td style="text-align:center;padding:6px 8px;">'+p.d+'</td>'+
         '<td style="text-align:right;padding:6px 8px;font-weight:600;">'+cf.format(cu)+'</td></tr>';
+      i++;
     });
+    if(alqM>0){
+      sub+=alqM;
+      body+='<tr style="background:'+(i%2?'#f2f5fb':'#fff')+';"><td style="padding:6px 8px;">Alquiler (su parte)</td>'+
+        '<td style="text-align:right;padding:6px 8px;">'+cf.format(md.alquilerMonto)+'</td>'+
+        '<td style="text-align:center;padding:6px 8px;">3</td>'+
+        '<td style="text-align:right;padding:6px 8px;font-weight:600;">'+cf.format(alqM)+'</td></tr>';
+    }
     granTotal+=sub;
     body+='</table><p style="text-align:right;margin:8px 4px 0;font-weight:700;">Total C/U '+QNAME[q]+': '+cf.format(sub)+'</p>';
   });
@@ -1170,7 +1284,7 @@ function nextMonthId(){
 const cloneRows=(rows,sec)=>rows.filter(r=>!isBlank(r,sec)).map(r=>{const o=normRow(r,sec); o.id=uid(); return o;});
 function createMonth(id,opts){
   if(months[id]){ cur=id; tab='resumen'; render(); toast('Ese mes ya existía: te lo muestro'); return; }
-  const src=(opts&&months[cur])?months[cur]:null; const md={v:1};
+  const src=(opts&&months[cur])?months[cur]:null; const md={v:1, ...normMonthFields(src||{})};
   cur=id;
   QS.forEach(q=>{
     md[q]={};
