@@ -80,7 +80,7 @@ main{max-width:1240px; margin:0 auto; padding:16px 16px 48px}
 .loginbox{background:var(--card); border-radius:16px; padding:24px; box-shadow:var(--shadow); display:grid; gap:12px}
 .loginbox h2{font-size:18px; color:var(--brand)}
 .loginbox label{display:grid; gap:4px; font-size:12px; color:var(--muted)}
-.loginbox input,.modal input.txt,.modal input[type="month"]{
+.loginbox input,.loginbox input.txt,.modal input.txt,.modal input[type="month"]{
   border:1px solid var(--line); background:var(--field); color:var(--ink); border-radius:8px; padding:10px; font:inherit; width:100%;
 }
 .loginbox input:focus{outline:2px solid var(--accent); outline-offset:-1px}
@@ -291,13 +291,31 @@ table.tbl{width:100%; border-collapse:collapse; margin-top:8px}
 
 <div id="login" class="center" hidden>
   <form class="loginbox" id="loginForm">
-    <h2>Ingresar</h2>
+    <h2 id="authTitle">Ingresar</h2>
     <label>Correo <input type="email" id="lEmail" autocomplete="username" required></label>
-    <label>Clave <input type="password" id="lPass" autocomplete="current-password" required></label>
+    <label>Clave <input type="password" id="lPass" autocomplete="current-password" required minlength="6"></label>
+    <label id="lCodeWrap" hidden>Código de invitación <input type="text" class="txt" id="lCode" autocomplete="off" placeholder="El que te dieron"></label>
+    <label id="lNombreWrap" hidden>Nombre de tu hogar (opcional) <input type="text" class="txt" id="lNombre" autocomplete="off" placeholder="Ej: Familia Pérez"></label>
     <button class="btn primary" id="lBtn" type="submit">Entrar</button>
     <p class="err" id="lErr" role="alert"></p>
     <button class="link" id="lReset" type="button">Olvidé mi clave</button>
+    <button class="link" id="lToggle" type="button">¿No tenés cuenta? Creá una</button>
   </form>
+</div>
+
+<div id="nohogar" class="center" hidden>
+  <div class="loginbox">
+    <h2>Falta vincular tu cuenta</h2>
+    <p class="small" id="nhMsg">Tu cuenta todavía no pertenece a ningún hogar.</p>
+    <label>Código de invitación o de hogar <input type="text" class="txt" id="nhCode" autocomplete="off"></label>
+    <button class="btn primary" id="nhBtn" type="button">Vincular</button>
+    <p class="err" id="nhErr" role="alert"></p>
+    <div id="nhMigrar" hidden style="margin-top:14px; border-top:1px solid var(--line); padding-top:14px">
+      <p class="small">Encontramos un libro anterior con tus datos.</p>
+      <button class="btn" id="nhMigrarBtn" type="button">Migrar mi libro anterior</button>
+    </div>
+    <button class="link" id="nhSalir" type="button" style="margin-top:14px">Salir</button>
+  </div>
 </div>
 
 <main id="main" hidden></main>
@@ -345,6 +363,7 @@ function toast(msg){
 }
 function setView(v){
   $('#loading').hidden=v!=='loading'; $('#login').hidden=v!=='login'; $('#setup').hidden=v!=='setup';
+  $('#nohogar').hidden=v!=='nohogar';
   const app=v==='app'; $('#controls').hidden=!app; $('#main').hidden=!app;
   $('#tabs').hidden=!(app&&cur);
 }
@@ -467,6 +486,14 @@ let months={}, cur=null, tab='resumen';
 let ready=false, inflight=null, saving=false, saveTimer=null, retryTimer=null, pendingRender=false;
 const dirty=new Set();
 let fbApp=null, auth=null, db=null, FS=null, AU=null, unsub=null, me=null, loadTimer=null;
+let hogarId=null, hogarInfo=null, authMode='login';
+function genCode(len){
+  const chars='ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  let s=''; for(let i=0;i<len;i++) s+=chars[Math.floor(Math.random()*chars.length)];
+  return s;
+}
+const mesesCol=()=>FS.collection(db,'hogares',hogarId,'meses');
+const mesDocRef=id=>FS.doc(db,'hogares',hogarId,'meses',id);
 
 /* ---------- Guardado ---------- */
 function setStatus(kind,err){
@@ -490,7 +517,7 @@ async function flush(){
       const id=dirty.values().next().value; dirty.delete(id);
       if(!months[id]) continue;
       inflight=id; setStatus('saving');
-      try{ await FS.setDoc(FS.doc(db,'libro',id),serialize(months[id])); }
+      try{ await FS.setDoc(mesDocRef(id),serialize(months[id])); }
       catch(e){ dirty.add(id); throw e; }
       finally{ inflight=null; }
     }
@@ -542,7 +569,7 @@ function startData(){
   setView('loading'); $('#loadingMsg').textContent='Cargando tus datos…'; $('#loadingErr').textContent='';
   clearTimeout(loadTimer);
   loadTimer=setTimeout(()=>{ if(!ready) $('#loadingMsg').textContent='Sigue cargando… revisá tu conexión a internet.'; },8000);
-  unsub=FS.onSnapshot(FS.collection(db,'libro'),snap=>{
+  unsub=FS.onSnapshot(mesesCol(),snap=>{
     const map={};
     snap.docs.forEach(d=>{ map[d.id]=JSON.parse(JSON.stringify(d.data())); });
     onRemote(map,!snap.metadata.fromCache);
@@ -550,7 +577,7 @@ function startData(){
     if(!ready){
       $('#loadingMsg').textContent='No se pudieron cargar los datos.';
       $('#loadingErr').textContent=(err&&err.code==='permission-denied')
-        ? 'Tu usuario no tiene permiso. Agregá este ID a las reglas de Firestore: '+(me?me.uid:'')
+        ? 'Tu cuenta no tiene permiso sobre este hogar. Cerrá sesión y volvé a entrar.'
         : 'Error: '+((err&&err.code)||'desconocido');
     } else setStatus('error',err);
   });
@@ -558,7 +585,7 @@ function startData(){
 function stopData(){
   if(unsub){ try{unsub();}catch(e){} unsub=null; }
   clearTimeout(loadTimer); clearTimeout(saveTimer); clearTimeout(retryTimer); retryTimer=null;
-  months={}; cur=null; ready=false; dirty.clear(); $('#main').replaceChildren(); closeModal();
+  months={}; cur=null; ready=false; dirty.clear(); hogarId=null; hogarInfo=null; $('#main').replaceChildren(); closeModal();
 }
 
 /* ---------- Cálculos en pantalla ---------- */
@@ -929,6 +956,10 @@ function buildResumen(){
    '<section class="card" style="margin-top:16px"><header><h2>Egresos del mes por categoría</h2></header>'+
    '<p class="hint">Se arma con la categoría que le pongas a cada línea de Egresos fijos y Egresos variables.</p>'+
    '<div class="pie-wrap" id="pieWrap"></div></section>'+
+   '<section class="card" style="margin-top:16px"><header><h2>Tu hogar</h2></header>'+
+   '<p class="hint" id="hogarNombre"></p>'+
+   '<p class="small">Para que tu pareja vea este mismo libro: que cree su cuenta en "Crear cuenta" usando este código.</p>'+
+   '<div class="tools" id="hogarCodeTools"></div></section>'+
    '<section class="card" style="margin-top:16px"><header><h2>Herramientas</h2></header>'+
    '<p class="hint">Bajá un respaldo de vez en cuando. También podés restaurarlo o pasar datos de otro libro.</p>'+
    '<div class="tools" id="tools"></div>'+
@@ -944,6 +975,17 @@ function buildResumen(){
   const m1=el('button','btn'); m1.type='button'; m1.textContent='Imagen para Mamá (JPG)'; m1.addEventListener('click',exportMama);
   const m3=el('button','btn primary'); m3.type='button'; m3.textContent='Descargar plantilla completa (PDF)'; m3.addEventListener('click',exportFullPDF);
   te.append(m1,m3);
+  $('#hogarNombre',v).textContent='Hogar: '+(hogarInfo&&hogarInfo.nombre?hogarInfo.nombre:'(sin nombre)');
+  const hc=$('#hogarCodeTools',v);
+  const pill=el('span','pill'); pill.style.cssText='font-weight:700; letter-spacing:.06em; font-size:14px';
+  pill.textContent=(hogarInfo&&hogarInfo.codigoHogar)||'—';
+  const copyBtn=el('button','btn'); copyBtn.type='button'; copyBtn.textContent='Copiar código';
+  copyBtn.addEventListener('click',async()=>{
+    const code=(hogarInfo&&hogarInfo.codigoHogar)||'';
+    try{ await navigator.clipboard.writeText(code); toast('Código copiado'); }
+    catch(e){ toast('No se pudo copiar: '+code); }
+  });
+  hc.append(pill,copyBtn);
   $('#sesion',v).textContent=me?('Sesión: '+(me.email||'')+' · ID de usuario: '+me.uid):'';
   return v;
 }
@@ -1165,7 +1207,7 @@ function askDeleteMonth(){
     {label:'Cancelar'},
     {label:'Eliminar',cls:'danger solid',onClick:async()=>{
       dirty.delete(id);
-      try{ await FS.deleteDoc(FS.doc(db,'libro',id)); }catch(e){ toast('No se pudo eliminar'); return; }
+      try{ await FS.deleteDoc(mesDocRef(id)); }catch(e){ toast('No se pudo eliminar'); return; }
       delete months[id];
       const all=Object.keys(months).sort(); cur=all[all.length-1]; render(); toast('Mes eliminado');
     }}
@@ -1199,16 +1241,66 @@ if('serviceWorker' in navigator){
 function loginError(e){
   const c=(e&&e.code)||'';
   if(/invalid-credential|wrong-password|user-not-found|invalid-email|missing-password/.test(c)) return 'Correo o clave incorrectos.';
+  if(c==='auth/email-already-in-use') return 'Ya existe una cuenta con ese correo. Probá "Ingresar".';
+  if(c==='auth/weak-password') return 'La clave tiene que tener al menos 6 caracteres.';
   if(c==='auth/too-many-requests') return 'Demasiados intentos. Esperá unos minutos y probá de nuevo.';
   if(c==='auth/network-request-failed') return 'Sin conexión a internet.';
   if(c==='auth/unauthorized-domain') return 'Este dominio no está autorizado en Firebase (ver LEEME).';
   return 'No se pudo ingresar ('+(c||'error')+').';
 }
+let pendingCode=null, pendingNombre=null;
+async function linkCodeToAccount(rawCode){
+  const code=String(rawCode||'').trim().toUpperCase();
+  if(!code) throw new Error('Escribí un código.');
+  const chSnap=await FS.getDoc(FS.doc(db,'codigosHogar',code));
+  if(chSnap.exists()){
+    const hId=chSnap.data().hogarId;
+    await FS.updateDoc(FS.doc(db,'hogares',hId),{miembros:FS.arrayUnion(me.uid)});
+    hogarId=hId;
+    try{ const hSnap=await FS.getDoc(FS.doc(db,'hogares',hId)); hogarInfo=hSnap.data(); }catch(e){}
+    return;
+  }
+  const invSnap=await FS.getDoc(FS.doc(db,'invites',code));
+  if(invSnap.exists() && invSnap.data().usado===false){
+    const hogarRef=FS.doc(FS.collection(db,'hogares'));
+    const codigoHogar=genCode(6);
+    const info={nombre:pendingNombre||'Mi hogar', creadoPor:me.uid, miembros:[me.uid], codigoHogar};
+    const batch=FS.writeBatch(db);
+    batch.set(hogarRef,info);
+    batch.set(FS.doc(db,'codigosHogar',codigoHogar),{hogarId:hogarRef.id});
+    batch.update(FS.doc(db,'invites',code),{usado:true, hogarId:hogarRef.id});
+    await batch.commit();
+    hogarId=hogarRef.id; hogarInfo=info;
+    return;
+  }
+  throw new Error('Ese código no es válido o ya fue usado.');
+}
+function setAuthMode(mode){
+  authMode=mode;
+  const signup=mode==='signup';
+  $('#authTitle').textContent=signup?'Crear cuenta':'Ingresar';
+  $('#lBtn').textContent=signup?'Crear cuenta':'Entrar';
+  $('#lCodeWrap').hidden=!signup; $('#lCode').required=signup;
+  $('#lNombreWrap').hidden=!signup;
+  $('#lReset').hidden=signup;
+  $('#lToggle').textContent=signup?'¿Ya tenés cuenta? Ingresá':'¿No tenés cuenta? Creá una';
+  $('#lErr').textContent='';
+}
+$('#lToggle').addEventListener('click',()=>setAuthMode(authMode==='login'?'signup':'login'));
 $('#loginForm').addEventListener('submit',async ev=>{
   ev.preventDefault();
   const btn=$('#lBtn'); $('#lErr').textContent=''; btn.disabled=true;
-  try{ await AU.signInWithEmailAndPassword(auth,$('#lEmail').value.trim(),$('#lPass').value); $('#lPass').value=''; }
-  catch(e){ $('#lErr').textContent=loginError(e); }
+  const email=$('#lEmail').value.trim(), pass=$('#lPass').value;
+  try{
+    if(authMode==='signup'){
+      pendingCode=$('#lCode').value; pendingNombre=$('#lNombre').value.trim();
+      await AU.createUserWithEmailAndPassword(auth,email,pass);
+    } else {
+      await AU.signInWithEmailAndPassword(auth,email,pass);
+    }
+    $('#lPass').value='';
+  }
+  catch(e){ pendingCode=null; pendingNombre=null; $('#lErr').textContent=loginError(e); }
   finally{ btn.disabled=false; }
 });
 $('#lReset').addEventListener('click',async()=>{
@@ -1217,6 +1309,30 @@ $('#lReset').addEventListener('click',async()=>{
   try{ await AU.sendPasswordResetEmail(auth,email); $('#lErr').textContent=''; toast('Si el correo existe, te llegó un mensaje para cambiar la clave'); }
   catch(e){ $('#lErr').textContent=loginError(e); }
 });
+$('#nhBtn').addEventListener('click',async()=>{
+  const btn=$('#nhBtn'); $('#nhErr').textContent=''; btn.disabled=true;
+  try{ await linkCodeToAccount($('#nhCode').value); startData(); }
+  catch(e){ $('#nhErr').textContent=e.message||'No se pudo vincular el código.'; }
+  finally{ btn.disabled=false; }
+});
+$('#nhMigrarBtn').addEventListener('click',async()=>{
+  const btn=$('#nhMigrarBtn'); $('#nhErr').textContent=''; btn.disabled=true; btn.textContent='Migrando…';
+  try{ await migrarLibroAnterior(); startData(); toast('Tu libro anterior ya está migrado'); }
+  catch(e){ $('#nhErr').textContent='No se pudo migrar: '+(e.message||'error desconocido'); btn.disabled=false; btn.textContent='Migrar mi libro anterior'; }
+});
+$('#nhSalir').addEventListener('click',()=>{ if(auth) AU.signOut(auth); });
+async function migrarLibroAnterior(){
+  const snap=await FS.getDocs(FS.collection(db,'libro'));
+  const hogarRef=FS.doc(FS.collection(db,'hogares'));
+  const codigoHogar=genCode(6);
+  const info={nombre:'Casa Viera Ollarves', creadoPor:me.uid, miembros:[me.uid], codigoHogar};
+  const batch=FS.writeBatch(db);
+  batch.set(hogarRef,info);
+  batch.set(FS.doc(db,'codigosHogar',codigoHogar),{hogarId:hogarRef.id});
+  snap.docs.forEach(d=>{ batch.set(FS.doc(db,'hogares',hogarRef.id,'meses',d.id), d.data()); });
+  await batch.commit();
+  hogarId=hogarRef.id; hogarInfo=info;
+}
 
 /* ---------- Arranque ---------- */
 async function boot(){
@@ -1232,10 +1348,39 @@ async function boot(){
     $('#loadingMsg').textContent='No se pudo cargar Firebase. Revisá tu conexión a internet y recargá.'; return;
   }
   AU.onAuthStateChanged(auth,user=>{
-    if(user){ me=user; startData(); }
+    if(user){ me=user; resolveHogar(); }
     else { me=null; stopData(); setView('login'); }
   });
 }
+async function resolveHogar(){
+  setView('loading'); $('#loadingMsg').textContent='Buscando tu hogar…'; $('#loadingErr').textContent='';
+  try{
+    const q=FS.query(FS.collection(db,'hogares'), FS.where('miembros','array-contains',me.uid));
+    const snap=await FS.getDocs(q);
+    if(!snap.empty){
+      const d=snap.docs[0];
+      hogarId=d.id; hogarInfo=d.data();
+      startData();
+      return;
+    }
+    if(pendingCode){
+      const code=pendingCode; pendingCode=null;
+      try{ await linkCodeToAccount(code); startData(); return; }
+      catch(e){ await showNoHogar(); $('#nhErr').textContent=e.message||'No se pudo vincular el código.'; return; }
+    }
+  }catch(e){ /* sigue abajo */ }
+  await showNoHogar();
+}
+async function showNoHogar(){
+  setView('nohogar');
+  $('#nhErr').textContent=''; $('#nhCode').value='';
+  $('#nhMigrar').hidden=true;
+  try{
+    const snap=await FS.getDocs(FS.collection(db,'libro'));
+    if(!snap.empty) $('#nhMigrar').hidden=false;
+  }catch(e){ /* sin acceso al libro anterior: no se muestra la opción */ }
+}
+setAuthMode('login');
 boot();
 </script>
 </body>

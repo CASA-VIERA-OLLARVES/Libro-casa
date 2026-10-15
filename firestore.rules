@@ -1,0 +1,63 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------- Hogares ----------
+    // Cada hogar tiene hasta 2 personas (miembros). Solo ellas pueden leer
+    // o escribir sus datos.
+    match /hogares/{hogarId} {
+      allow read: if request.auth != null && request.auth.uid in resource.data.miembros;
+
+      // Crear un hogar nuevo: solo con uno mismo como único miembro.
+      allow create: if request.auth != null
+        && request.resource.data.miembros == [request.auth.uid]
+        && request.resource.data.creadoPor == request.auth.uid
+        && request.resource.data.codigoHogar is string;
+
+      // Sumarse a un hogar existente: el único cambio permitido es agregar
+      // el propio UID al final de la lista de miembros (nada más se toca).
+      allow update: if request.auth != null
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['miembros'])
+        && request.resource.data.miembros == resource.data.miembros.concat([request.auth.uid])
+        && resource.data.miembros.size() < 2;
+
+      match /meses/{mesId} {
+        allow read, write: if request.auth != null
+          && request.auth.uid in get(/databases/$(database)/documents/hogares/$(hogarId)).data.miembros;
+      }
+    }
+
+    // ---------- Códigos de hogar ----------
+    // Tabla chica de "código -> ID de hogar" para que alguien se pueda sumar
+    // a un hogar existente. No tiene datos sensibles, solo un puntero.
+    match /codigosHogar/{codigo} {
+      allow read: if true;
+      allow create: if request.auth != null;
+    }
+
+    // ---------- Invitaciones maestras ----------
+    // Vos las creás a mano en la consola de Firebase, una por familia nueva
+    // (ver LEEME.md). Se usan una sola vez, para crear el primer hogar.
+    match /invites/{codigo} {
+      allow read: if true;
+      allow update: if request.auth != null
+        && resource.data.usado == false
+        && request.resource.data.usado == true
+        && request.resource.data.hogarId is string
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['usado','hogarId']);
+    }
+
+    // ---------- Libro anterior (antes de los hogares) ----------
+    // Deja migrar una sola vez los datos viejos de Jorge al nuevo sistema.
+    // Se puede borrar este bloque una vez hecha la migración.
+    match /libro/{mes} {
+      allow read, write: if request.auth != null
+        && request.auth.uid == 'I8avDvBRQ8VISy9owWdDVhUtuhG3';
+    }
+
+    // Todo lo demás, cerrado.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
