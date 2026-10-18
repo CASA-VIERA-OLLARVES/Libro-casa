@@ -381,7 +381,7 @@ function setView(v){
 const blank=sec=>{
   if(sec==='plataformas') return {id:uid(),n:'',m:null,d:null,r:true};
   if(sec==='egresos'||sec==='anticipados') return {id:uid(),n:'',m:null,cat:'',pagado:false};
-  if(sec==='tarjeta') return {id:uid(),n:'',m:null,cuotas:1,valorCuota:null,inicio:cur||null};
+  if(sec==='tarjeta') return {id:uid(),n:'',m:null,cuotas:1,valorCuota:null,inicio:cur||null,cat:''};
   return {id:uid(),n:'',m:null};
 };
 const isBlank=(r,sec)=>!String(r.n||'').trim() && r.m==null && (sec!=='plataformas' || r.d==null);
@@ -393,6 +393,7 @@ function normRow(r,sec){
     o.cuotas=(typeof r.cuotas==='number'&&CUOTAS_OPC.includes(r.cuotas))?r.cuotas:1;
     o.valorCuota=(typeof r.valorCuota==='number'&&isFinite(r.valorCuota))?r.valorCuota:null;
     o.inicio=(typeof r.inicio==='string'&&MES_RE.test(r.inicio))?r.inicio:null;
+    o.cat=(typeof r.cat==='string'&&CATS.includes(r.cat))?r.cat:'';
   }
   return o;
 }
@@ -569,7 +570,8 @@ function onRemote(map,definitive){
     if(!map[id] && !dirty.has(id) && inflight!==id){ delete months[id]; changed=true; }
   });
   if(!months[cur]){
-    cur=defaultMonthId(); changed=true;
+    const all=Object.keys(months).sort();
+    cur=all.length?all[all.length-1]:null; changed=true;
   }
   if(!ready && definitive){
     ready=true; clearTimeout(loadTimer); setView('app'); changed=true; setStatus('ready');
@@ -658,8 +660,11 @@ function refreshComputed(){
 function renderPie(md){
   const host=document.getElementById('pieWrap'); if(!host) return;
   const totals=monthCategoryTotals(md);
-  const tc=monthTarjetaTotal(cur,'q1')+monthTarjetaTotal(cur,'q2');
-  if(tc>0) totals['Tarjeta de crédito']=(totals['Tarjeta de crédito']||0)+tc;
+  activeCuotasFor(cur,'q1').concat(activeCuotasFor(cur,'q2')).forEach(it=>{
+    if(it.amount<=0) return;
+    const k=it.row.cat||'Tarjeta de crédito';
+    totals[k]=(totals[k]||0)+it.amount;
+  });
   if(md.alquilerMonto!=null && md.alquilerMonto>0) totals['Alquiler']=(totals['Alquiler']||0)+md.alquilerMonto;
   const diezmoTotal=num(md.diezmoJorge)+num(md.diezmoJossely);
   if(diezmoTotal>0) totals['Diezmo']=(totals['Diezmo']||0)+diezmoTotal;
@@ -848,7 +853,10 @@ function tarjetaRow(q,row){
   const fValor=tcField('Valor cuota'); fValor.body.append(vc);
   const fTotal=tcField('Total compra'); fTotal.body.append(totalBox);
 
-  l2.append(fMonto.wrap,fCuotas.wrap,fFecha.wrap,fValor.wrap,fTotal.wrap);
+  const fCat=tcField('Categoría');
+  fCat.body.append(catSelect(row.cat,v=>{row.cat=v; afterEdit(q,'tarjeta',row,box);}));
+
+  l2.append(fMonto.wrap,fCat.wrap,fCuotas.wrap,fFecha.wrap,fValor.wrap,fTotal.wrap);
   box.append(l2);
   syncTotal();
   return box;
@@ -859,7 +867,9 @@ function tarjetaCarriedItem(it){
   const nm=el('span'); nm.textContent=it.row.n||'—';
   const tag=el('span','tag'); tag.textContent='Cuota '+it.cuotaNum+'/'+it.totalCuotas;
   const amt=el('span','amt'); amt.textContent=cf.format(it.amount);
-  l1.append(nm,tag,amt);
+  l1.append(nm,tag);
+  if(it.row.cat){ const catTag=el('span','tag'); catTag.textContent=it.row.cat; l1.append(catTag); }
+  l1.append(amt);
   box.append(l1);
   return box;
 }
@@ -1075,7 +1085,7 @@ function buildResumen(){
   const del=el('button','btn danger'); del.type='button'; del.textContent='Eliminar este mes'; del.addEventListener('click',askDeleteMonth);
   tools.append(b1,b2,del);
   const te=$('#toolsExport',v);
-  const m1=el('button','btn'); m1.type='button'; m1.textContent='Imagen para Mamá (JPG)'; m1.addEventListener('click',exportMama);
+  const m1=el('button','btn'); m1.type='button'; m1.textContent='Imagen'; m1.addEventListener('click',exportMama);
   const m3=el('button','btn primary'); m3.type='button'; m3.textContent='Descargar plantilla completa (PDF)'; m3.addEventListener('click',exportFullPDF);
   te.append(m1,m3);
   $('#hogarNombre',v).textContent='Hogar: '+(hogarInfo&&hogarInfo.nombre?hogarInfo.nombre:'(sin nombre)');
@@ -1137,7 +1147,6 @@ function downloadBlob(blob,filename){
   document.body.append(a); a.click(); a.remove();
   setTimeout(()=>URL.revokeObjectURL(a.href),1500);
 }
-const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function buildMamaHTML(md){
   const G='#1b2333', GOLD='#FFCC00', BLUE='#00247D', RED='#CF142B';
   let body='<div style="font-family:system-ui,Arial,sans-serif;background:#fff;color:'+G+';width:680px;padding:28px 32px;">'+
@@ -1158,7 +1167,7 @@ function buildMamaHTML(md){
     let i=0;
     filas.forEach(p=>{
       const cu=(p.m!=null)?p.m/p.d:0; sub+=cu;
-      body+='<tr style="background:'+(i%2?'#f2f5fb':'#fff')+';"><td style="padding:6px 8px;">'+esc(p.n||'—')+'</td>'+
+      body+='<tr style="background:'+(i%2?'#f2f5fb':'#fff')+';"><td style="padding:6px 8px;">'+(p.n||'—')+'</td>'+
         '<td style="text-align:right;padding:6px 8px;">'+cf.format(num(p.m))+'</td>'+
         '<td style="text-align:center;padding:6px 8px;">'+p.d+'</td>'+
         '<td style="text-align:right;padding:6px 8px;font-weight:600;">'+cf.format(cu)+'</td></tr>';
@@ -1275,15 +1284,6 @@ function modal(title,body,actions){
   root.append(ov); document.addEventListener('keydown',escClose);
 }
 function currentMonthId(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
-// Mes que se muestra por defecto: el mes actual del calendario si existe;
-// si no existe, el más cercano anterior; si todos son futuros, el primero.
-function defaultMonthId(){
-  const ids=Object.keys(months).sort(); if(!ids.length) return null;
-  const hoy=currentMonthId();
-  if(months[hoy]) return hoy;
-  const antes=ids.filter(id=>id<hoy);
-  return antes.length?antes[antes.length-1]:ids[0];
-}
 function nextMonthId(){
   const ids=Object.keys(months).sort(); if(!ids.length) return currentMonthId();
   const last=ids[ids.length-1];
@@ -1332,7 +1332,7 @@ function askDeleteMonth(){
       dirty.delete(id);
       try{ await FS.deleteDoc(mesDocRef(id)); }catch(e){ toast('No se pudo eliminar'); return; }
       delete months[id];
-      cur=defaultMonthId(); render(); toast('Mes eliminado');
+      const all=Object.keys(months).sort(); cur=all[all.length-1]; render(); toast('Mes eliminado');
     }}
   ]);
 }
@@ -1491,7 +1491,7 @@ async function resolveHogar(){
       try{ await linkCodeToAccount(code); startData(); return; }
       catch(e){ await showNoHogar(); $('#nhErr').textContent=e.message||'No se pudo vincular el código.'; return; }
     }
-  }catch(e){ console.error('resolveHogar:',e); }
+  }catch(e){ /* sigue abajo */ }
   await showNoHogar();
 }
 async function showNoHogar(){
