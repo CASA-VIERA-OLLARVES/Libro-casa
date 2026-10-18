@@ -379,7 +379,7 @@ function setView(v){
 
 /* ---------- Modelo de datos ---------- */
 const blank=sec=>{
-  if(sec==='plataformas') return {id:uid(),n:'',m:null,d:null,r:true};
+  if(sec==='plataformas') return {id:uid(),n:'',m:null,d:null,r:true,pagado:false};
   if(sec==='egresos'||sec==='anticipados') return {id:uid(),n:'',m:null,cat:'',pagado:false};
   if(sec==='tarjeta') return {id:uid(),n:'',m:null,cuotas:1,valorCuota:null,inicio:cur||null,cat:''};
   return {id:uid(),n:'',m:null};
@@ -387,7 +387,7 @@ const blank=sec=>{
 const isBlank=(r,sec)=>!String(r.n||'').trim() && r.m==null && (sec!=='plataformas' || r.d==null);
 function normRow(r,sec){
   const o={id:String(r.id||uid()), n:String(r.n==null?'':r.n), m:(typeof r.m==='number'&&isFinite(r.m))?r.m:null};
-  if(sec==='plataformas'){ o.d=(typeof r.d==='number'&&r.d>0)?r.d:null; o.r=r.r!==false; }
+  if(sec==='plataformas'){ o.d=(typeof r.d==='number'&&r.d>0)?r.d:null; o.r=r.r!==false; o.pagado=r.pagado===true; }
   if(sec==='egresos'||sec==='anticipados'){ o.cat=(typeof r.cat==='string'&&CATS.includes(r.cat))?r.cat:''; o.pagado=r.pagado===true; }
   if(sec==='tarjeta'){
     o.cuotas=(typeof r.cuotas==='number'&&CUOTAS_OPC.includes(r.cuotas))?r.cuotas:1;
@@ -447,8 +447,16 @@ function normMonthFields(src){
     diezmoJossely: numOrNull(src&&src.diezmoJossely)
   };
 }
+function normMonthPagado(src){
+  const b=v=>v===true;
+  return {
+    alquilerPagadoQ1:b(src&&src.alquilerPagadoQ1), alquilerPagadoQ2:b(src&&src.alquilerPagadoQ2),
+    diezmoJorgePagadoQ1:b(src&&src.diezmoJorgePagadoQ1), diezmoJorgePagadoQ2:b(src&&src.diezmoJorgePagadoQ2),
+    diezmoJossePagadoQ1:b(src&&src.diezmoJossePagadoQ1), diezmoJossePagadoQ2:b(src&&src.diezmoJossePagadoQ2)
+  };
+}
 function hydrate(src){
-  const md={v:1, ...normMonthFields(src)};
+  const md={v:1, ...normMonthFields(src), ...normMonthPagado(src)};
   QS.forEach(q=>{
     md[q]={};
     SECS.forEach(sec=>{
@@ -460,7 +468,7 @@ function hydrate(src){
   return md;
 }
 function serialize(md){
-  const o={v:1, ...normMonthFields(md)};
+  const o={v:1, ...normMonthFields(md), ...normMonthPagado(md)};
   QS.forEach(q=>{
     o[q]={};
     SECS.forEach(sec=>{ o[q][sec]=md[q][sec].filter(r=>!isBlank(r,sec)).map(r=>normRow(r,sec)); });
@@ -897,18 +905,18 @@ function platRow(q,p){
   d.append(cn,cm,cd,cc,cr,cx);
   return d;
 }
-function autoRow(label,tag,bindAttr,bindVal){
+function autoRow(label,tag,bindAttr,bindVal,payRow){
   const d=el('div','row auto r2');
   const n=el('div','n'); const s=el('span'); s.textContent=label; const t=el('span','tag'); t.textContent=tag; n.append(s,t);
   const a=el('div','amt'); a.setAttribute(bindAttr,bindVal);
-  d.append(n,a,el('span'));
+  d.append(n,a, payRow?payBtn(payRow):el('span'));
   return d;
 }
 function renderList(q,sec){
   const host=document.getElementById(q+'-'+sec); if(!host) return;
   const qd=months[cur][q]; padSec(qd,sec);
   host.replaceChildren();
-  if(sec==='egresos') autoPlat(qd).forEach(p=>host.append(autoRow(p.n,'Plataformas','data-aut',p.id)));
+  if(sec==='egresos') autoPlat(qd).forEach(p=>host.append(autoRow(p.n,'Plataformas','data-aut',p.id,p)));
   if(sec==='ingresos' && hasMamaAny(qd,months[cur])) host.append(autoRow('Dinero dado por Mamá','Plataformas + alquiler','data-k',q+'.mamaTotal'));
   if(sec==='tarjeta') activeCuotasFor(cur,q).filter(it=>!it.isOrigin).forEach(it=>host.append(tarjetaCarriedItem(it)));
   qd[sec].forEach(r=>host.append(rowFor(q,sec,r)));
@@ -945,7 +953,21 @@ function moneyField(label,get,set,ph){
   wrap.append(inp);
   return {wrap,inp};
 }
-function buildFijosFijoEditable(){
+function payToggleField(getFn,setFn){
+  const b=el('button','pay'); b.type='button';
+  const render=()=>{
+    const p=getFn()===true;
+    b.textContent=p?'✓':'×';
+    b.classList.toggle('paid',p);
+    b.title=p?'Pagado — tocá para desmarcar':'Sin pagar — tocá para marcar como pagado';
+    b.setAttribute('aria-label',b.title);
+  };
+  render();
+  b.addEventListener('click',()=>{ setFn(!(getFn()===true)); render(); markDirty(); });
+  return b;
+}
+function pagadoFieldName(base,q){ return base+'Pagado'+(q==='q1'?'Q1':'Q2'); }
+function buildFijosFijoEditable(q){
   const box=el('div','fijoBox');
   const title=el('p','fijoTitle'); title.textContent='Gastos fijos del mes (se dividen mitad y mitad entre las dos quincenas)';
   box.append(title);
@@ -957,6 +979,8 @@ function buildFijosFijoEditable(){
       : 'Cargá el monto del alquiler para ver cómo se divide.';
   };
   const mf=moneyField('Alquiler (total del mes)',()=>months[cur].alquilerMonto,v=>{months[cur].alquilerMonto=v; syncInfo();});
+  const fAlq=pagadoFieldName('alquiler',q);
+  mf.wrap.append(payToggleField(()=>months[cur][fAlq],v=>{months[cur][fAlq]=v;}));
   box.append(mf.wrap); syncInfo(); box.append(info);
 
   const aumWrap=el('div','fijoRow');
@@ -967,8 +991,12 @@ function buildFijosFijoEditable(){
   aumWrap.append(aumIn); box.append(aumWrap);
 
   const mj=moneyField('Diezmo Jorge (total del mes)',()=>months[cur].diezmoJorge,v=>{months[cur].diezmoJorge=v;});
+  const fDJ=pagadoFieldName('diezmoJorge',q);
+  mj.wrap.append(payToggleField(()=>months[cur][fDJ],v=>{months[cur][fDJ]=v;}));
   box.append(mj.wrap);
   const mjo=moneyField('Diezmo Jossely (total del mes)',()=>months[cur].diezmoJossely,v=>{months[cur].diezmoJossely=v;});
+  const fDJo=pagadoFieldName('diezmoJosse',q);
+  mjo.wrap.append(payToggleField(()=>months[cur][fDJo],v=>{months[cur][fDJo]=v;}));
   box.append(mjo.wrap);
   return box;
 }
@@ -976,9 +1004,15 @@ function buildFijosFijoResumen(q){
   const box=el('div','fijoBox fijoRO');
   const title=el('p','fijoTitle'); title.textContent='Gastos fijos del mes (se editan en la 1ra quincena)';
   box.append(title);
-  const line=el('p','small');
-  line.innerHTML='Alquiler (mitad): <b data-k="'+q+'.alquilerQ"></b> · Diezmo Jorge: <b data-k="'+q+'.diezmoJQ"></b> · Diezmo Jossely: <b data-k="'+q+'.diezmoJoQ"></b>';
-  box.append(line);
+  const mk=(label,dataK,field)=>{
+    const row=el('div','fijoRow');
+    const lab=el('div','fijoLab'); lab.innerHTML=label+': <b data-k="'+dataK+'"></b>'; row.append(lab);
+    row.append(payToggleField(()=>months[cur][field],v=>{months[cur][field]=v;}));
+    return row;
+  };
+  box.append(mk('Alquiler (mitad)',q+'.alquilerQ',pagadoFieldName('alquiler',q)));
+  box.append(mk('Diezmo Jorge',q+'.diezmoJQ',pagadoFieldName('diezmoJorge',q)));
+  box.append(mk('Diezmo Jossely',q+'.diezmoJoQ',pagadoFieldName('diezmoJosse',q)));
   return box;
 }
 function card(q,sec,title,totalKey,hint){
@@ -986,7 +1020,7 @@ function card(q,sec,title,totalKey,hint){
   const h=el('header'); const t=el('h2'); t.textContent=title;
   const tot=el('span','tot'); tot.setAttribute('data-k',q+'.'+totalKey); h.append(t,tot); c.append(h);
   if(hint){ const p=el('p','hint'); p.innerHTML=hint.replace('{q}',q); c.append(p); }
-  if(sec==='egresos'){ c.append(q==='q1'?buildFijosFijoEditable():buildFijosFijoResumen(q)); }
+  if(sec==='egresos'){ c.append(q==='q1'?buildFijosFijoEditable(q):buildFijosFijoResumen(q)); }
   const isCat=(sec==='egresos'||sec==='anticipados');
   const isRetiro=sec==='retiro';
   const isTarjeta=sec==='tarjeta';
@@ -1293,7 +1327,7 @@ function nextMonthId(){
 const cloneRows=(rows,sec)=>rows.filter(r=>!isBlank(r,sec)).map(r=>{const o=normRow(r,sec); o.id=uid(); return o;});
 function createMonth(id,opts){
   if(months[id]){ cur=id; tab='resumen'; render(); toast('Ese mes ya existía: te lo muestro'); return; }
-  const src=(opts&&months[cur])?months[cur]:null; const md={v:1, ...normMonthFields(src||{})};
+  const src=(opts&&months[cur])?months[cur]:null; const md={v:1, ...normMonthFields(src||{}), ...normMonthPagado(null)};
   cur=id;
   QS.forEach(q=>{
     md[q]={};
