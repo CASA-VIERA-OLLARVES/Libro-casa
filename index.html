@@ -579,7 +579,9 @@ function onRemote(map,definitive){
   });
   if(!months[cur]){
     const all=Object.keys(months).sort();
-    cur=all.length?all[all.length-1]:null; changed=true;
+    const today=currentMonthId();
+    cur = months[today] ? today : (all.length?all[all.length-1]:null);
+    changed=true;
   }
   if(!ready && definitive){
     ready=true; clearTimeout(loadTimer); setView('app'); changed=true; setStatus('ready');
@@ -1345,8 +1347,13 @@ function newMonthDialog(){
   const inp=el('input'); inp.type='month'; inp.value=nextMonthId(); inp.className='txt'; inp.setAttribute('aria-label','Mes nuevo'); l1.append(inp);
   const l2=el('label'); const c1=el('input'); c1.type='checkbox'; c1.checked=true; l2.append(c1,'Copiar plataformas y reparto');
   const l3=el('label'); const c2=el('input'); c2.type='checkbox'; c2.checked=true; l3.append(c2,'Copiar ingresos (después cambiás los montos)');
-  const note=el('p','small'); note.textContent='Los egresos y gastos anticipados arrancan vacíos. Se copia desde '+monthLabel(cur)+'.';
-  body.append(l1,l2,l3,note);
+  const note=el('p','small');
+  note.textContent = cur
+    ? ('Los egresos y gastos anticipados arrancan vacíos. Se copia desde '+monthLabel(cur)+'.')
+    : 'Es tu primer mes: arranca vacío para que cargues todo.';
+  body.append(l1);
+  if(cur) body.append(l2,l3);
+  body.append(note);
   modal('Nuevo mes',body,[
     {label:'Cancelar'},
     {label:'Crear mes',cls:'primary',onClick:()=>{
@@ -1366,7 +1373,8 @@ function askDeleteMonth(){
       dirty.delete(id);
       try{ await FS.deleteDoc(mesDocRef(id)); }catch(e){ toast('No se pudo eliminar'); return; }
       delete months[id];
-      const all=Object.keys(months).sort(); cur=all[all.length-1]; render(); toast('Mes eliminado');
+      const all=Object.keys(months).sort(); const today=currentMonthId();
+      cur = months[today] ? today : all[all.length-1]; render(); toast('Mes eliminado');
     }}
   ]);
 }
